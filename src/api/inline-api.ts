@@ -15,10 +15,11 @@ import { DataArray } from "./data-array";
 import { SListItem } from "data-model/serialized/markdown";
 import { EXPRESSION } from "expression/parse";
 import { Result } from "api/result";
+import { WeeklyTaskApi, WeeklyTaskOptions } from './weekly-task-api';
 
 /** Asynchronous API calls related to file / system IO. */
 export class DataviewInlineIOApi {
-    public constructor(public api: DataviewIOApi, public currentFile: string) {}
+    public constructor(public api: DataviewIOApi, public currentFile: string) { }
 
     /** Load the contents of a CSV asynchronously, returning a data array of rows (or undefined if it does not exist). */
     public async csv(path: string, originFile?: string): Promise<DataArray<DataObject> | undefined> {
@@ -79,6 +80,9 @@ export class DataviewInlineApi {
     /** Re-exporting of luxon for people who can't easily require it. Sorry! */
     public luxon = Luxon;
 
+    /** Weekly task functionality */
+    public weekly: WeeklyTaskApi;
+
     /** Dataview functions which can be called from DataviewJS. */
     public func: Record<string, BoundFunctionImpl>;
 
@@ -101,6 +105,8 @@ export class DataviewInlineApi {
         });
 
         this.func = Functions.bindAll(DEFAULT_FUNCTIONS, this.evaluationContext);
+
+        this.weekly = new WeeklyTaskApi(api);
     }
 
     /////////////////////////////
@@ -404,6 +410,15 @@ export class DataviewInlineApi {
     /** Render at ask list directly to markdown, returning the markdown. */
     public markdownTaskList(values: Grouping<SListItem>, settings?: Partial<ExportSettings>) {
         return this.api.markdownTaskList(values, settings);
+    }
+
+    /** Get and render weekly tasks in one operation. A convenience wrapper around weekly.getAndRenderWeeklyTasks */
+    public async weeklyTasks(options: Omit<WeeklyTaskOptions, "component" | "container">): Promise<HTMLElement> {
+        return this.weekly.getAndRenderWeeklyTasks({
+            ...options,
+            component: this.component,
+            container: this.container
+        });
     }
 }
 

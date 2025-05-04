@@ -35,10 +35,11 @@ import { Query } from "query/query";
 import { DataviewCalendarRenderer } from "ui/views/calendar-view";
 import { DataviewJSRenderer } from "ui/views/js-view";
 import { markdownList, markdownTable, markdownTaskList } from "ui/export/markdown";
+import { WeeklyTaskApi } from './weekly-task-api';
 
 /** Asynchronous API calls related to file / system IO. */
 export class DataviewIOApi {
-    public constructor(public api: DataviewApi) {}
+    public constructor(public api: DataviewApi) { }
 
     /** Load the contents of a CSV asynchronously, returning a data array of rows (or undefined if it does not exist). */
     public async csv(path: Link | string, originFile?: string): Promise<DataArray<DataObject> | undefined> {
@@ -87,6 +88,8 @@ export class DataviewApi {
     public widget = Widgets;
     /** Re-exporting of luxon for people who can't easily require it. Sorry! */
     public luxon = Luxon;
+    /** Weekly task API for managing and rendering weekly task views */
+    public weekly: WeeklyTaskApi;
 
     public constructor(
         public app: App,
@@ -97,6 +100,7 @@ export class DataviewApi {
         this.evaluationContext = new Context(defaultLinkHandler(index, ""), settings);
         this.func = Functions.bindAll(DEFAULT_FUNCTIONS, this.evaluationContext);
         this.io = new DataviewIOApi(this);
+        this.weekly = new WeeklyTaskApi(this);
     }
 
     /** Utilities to check the current Dataview version and comapre it to SemVer version ranges. */
@@ -578,6 +582,18 @@ export class DataviewApi {
         const sparse = nestGroups(values);
         const combined = Object.assign({}, this.settings, settings);
         return markdownTaskList(sparse as any[], combined);
+    }
+
+    /** Get and render weekly tasks in one operation. A convenience wrapper around weekly.getAndRenderWeeklyTasks */
+    public async weeklyTasks(options: {
+        year: number;
+        week: number;
+        searchPath?: string;
+        filename?: string;
+        component: Component;
+        container: HTMLElement;
+    }): Promise<HTMLElement> {
+        return this.weekly.getAndRenderWeeklyTasks(options);
     }
 }
 
