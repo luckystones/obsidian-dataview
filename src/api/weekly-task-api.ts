@@ -4,6 +4,17 @@ import { DataviewApi } from './plugin-api';
 
 export type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
 
+export interface ParsedTask {
+    description: string;
+    duration: string;
+    startTime: string;
+    eventId: string;
+    repetition: string;
+    scheduleDate: string;
+    dueDate: string;
+    completionDate: string;
+}
+
 export interface WeeklyTaskGroup {
     Monday: STask[];
     Tuesday: STask[];
@@ -29,6 +40,8 @@ export interface WeeklyTaskOptions {
     container?: HTMLElement;
     /** Whether to render as a table (true) or list view (false). Defaults to true. */
     tableView?: boolean;
+    /** Whether to show only the task description (true) or the full task text (false). Defaults to true. */
+    trimTaskText?: boolean;
 }
 
 export class WeeklyTaskApi {
@@ -51,7 +64,8 @@ export class WeeklyTaskApi {
             filename = `${year}-W${week}`,
             component,
             container,
-            tableView = true
+            tableView = true,
+            trimTaskText = true
         } = options;
 
         if (!component || !container) {
@@ -60,6 +74,23 @@ export class WeeklyTaskApi {
 
         // Get the tasks
         const tasks = await this.getWeeklyTasks(year, week, searchPath);
+
+        // If trimTaskText is true, update each task's text to show only the description
+        if (trimTaskText) {
+            Object.values(tasks).forEach(dayTasks => {
+                dayTasks.forEach((task: STask) => {
+                    const parsedTask = this.parseTask(task.text);
+                    // Store the original text in a new property
+                    (task as any).originalText = task.text;
+                    // Update the text to show only the description
+                    task.text = parsedTask.description;
+                    // Also update visual if it exists
+                    if (task.visual) {
+                        task.visual = parsedTask.description;
+                    }
+                });
+            });
+        }
 
         // Render them
         return tableView
@@ -110,7 +141,7 @@ export class WeeklyTaskApi {
 
         // Create task cells array
         const weekdayTasks = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => {
-            const taskContainer = createEl('div');
+            const taskContainer = createEl('div', { cls: 'task-container' });
             this.dv.taskList(tasks[day as DayOfWeek], false, taskContainer, component, filename);
             return taskContainer;
         });
@@ -130,7 +161,7 @@ export class WeeklyTaskApi {
 
         // Create weekend task cells
         const weekendTasks = ['Saturday', 'Sunday'].map(day => {
-            const taskContainer = createEl('div');
+            const taskContainer = createEl('div', { cls: 'task-container' });
             this.dv.taskList(tasks[day as DayOfWeek], false, taskContainer, component, filename);
             return taskContainer;
         });
@@ -241,6 +272,77 @@ export class WeeklyTaskApi {
                 result[dayName].push(task);
             }
         });
+
+        return result;
+    }
+
+    private parseTask(taskText: string): ParsedTask {
+        // Default values
+        const result: ParsedTask = {
+            description: taskText,
+            duration: '',
+            startTime: '',
+            eventId: '',
+            repetition: '',
+            scheduleDate: '',
+            dueDate: '',
+            completionDate: ''
+        };
+
+        // Extract metadata and description using regex
+        // Format: Task description #tag @duration(2h) @start(10:00) @id(123) @repeat(daily) ⏳ 2023-01-01 📅 2023-01-02 ✅ 2023-01-03
+
+        // Extract and remove duration: @duration(2h)
+        const durationMatch = taskText.match(/@duration\(([^)]+)\)/);
+        if (durationMatch) {
+            result.duration = durationMatch[1];
+            result.description = result.description.replace(durationMatch[0], '').trim();
+        }
+
+        // Extract and remove start time: @start(10:00)
+        const startMatch = taskText.match(/@start\(([^)]+)\)/);
+        if (startMatch) {
+            result.startTime = startMatch[1];
+            result.description = result.description.replace(startMatch[0], '').trim();
+        }
+
+        // Extract and remove event ID: @id(123)
+        const idMatch = taskText.match(/@id\(([^)]+)\)/);
+        if (idMatch) {
+            result.eventId = idMatch[1];
+            result.description = result.description.replace(idMatch[0], '').trim();
+        }
+
+        // Extract and remove repetition: @repeat(daily)
+        const repeatMatch = taskText.match(/@repeat\(([^)]+)\)/);
+        if (repeatMatch) {
+            result.repetition = repeatMatch[1];
+            result.description = result.description.replace(repeatMatch[0], '').trim();
+        }
+
+        // Extract and remove scheduled date: ⏳ 2023-01-01
+        const scheduleMatch = taskText.match(/⏳ ([0-9-]+)/);
+        if (scheduleMatch) {
+            result.scheduleDate = scheduleMatch[1];
+            result.description = result.description.replace(scheduleMatch[0], '').trim();
+        }
+
+        // Extract and remove due date: 📅 2023-01-02
+        const dueMatch = taskText.match(/📅 ([0-9-]+)/);
+        if (dueMatch) {
+            result.dueDate = dueMatch[1];
+            result.description = result.description.replace(dueMatch[0], '').trim();
+        }
+
+        // Extract and remove completion date: ✅ 2023-01-03
+        const completionMatch = taskText.match(/✅ ([0-9-]+)/);
+        if (completionMatch) {
+            result.completionDate = completionMatch[1];
+            result.description = result.description.replace(completionMatch[0], '').trim();
+        }
+
+        // Clean up any remaining double spaces
+        result.description = result.description.replace(/\s+/g, ' ').trim();
 
         return result;
     }

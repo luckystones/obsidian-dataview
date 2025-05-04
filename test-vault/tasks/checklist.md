@@ -18,5 +18,5 @@
 - [ ] additional task, should link to header
 - [ ] this is the task 📅 2021-01-01
 - [ ] this is the task 📅 2021-01-02
-- [ ] this is the task 📅 2021-01-06    
+- [x] this is the task 📅 2021-01-06    
       
