@@ -1,11 +1,7 @@
-import { Notice } from 'obsidian';
-import { DataviewApi } from 'api/plugin-api';
-import { STask, SListItem, SMarkdownPage } from 'data-model/serialized/markdown';
-import { DateTime } from 'luxon';
-import { Literal } from 'data-model/value';
-import { Link } from 'data-model/value';
-import { Component } from 'obsidian';
 import { DataArray } from 'api/data-array';
+import { DataviewApi } from 'api/plugin-api';
+import { SMarkdownPage, STask } from 'data-model/serialized/markdown';
+import { Component, Notice } from 'obsidian';
 
 export default class WeeklyTaskView {
     private dv: DataviewApi;

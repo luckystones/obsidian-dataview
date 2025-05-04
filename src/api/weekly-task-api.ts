@@ -46,6 +46,7 @@ export interface WeeklyTaskOptions {
 
 export class WeeklyTaskApi {
     private dv: DataviewApi;
+    private weekendColor = '#9C89B8'; // A calm lavender/purple color
 
     constructor(dv: DataviewApi) {
         this.dv = dv;
@@ -93,9 +94,53 @@ export class WeeklyTaskApi {
         }
 
         // Render them
-        return tableView
+        const result = tableView
             ? this.renderWeeklyTasksAsTable(tasks, filename, component, container)
             : this.renderWeeklyTasksAsList(tasks, filename, component, container);
+
+        // Ensure styles are applied
+        this.reloadStyles();
+
+        return result;
+    }
+
+    /**
+     * Force reload the CSS styles to ensure they're applied
+     */
+    private reloadStyles() {
+        // Get all style elements
+        const styleElements = document.querySelectorAll('style');
+
+        // Find the dataview style element or the obsidian app style
+        let styleElement: HTMLStyleElement | null = null;
+        for (let i = 0; i < styleElements.length; i++) {
+            const el = styleElements[i] as HTMLStyleElement;
+            if (el.innerHTML.includes('dataview') || el.innerHTML.includes('.weekly-task-view')) {
+                styleElement = el;
+                break;
+            }
+        }
+
+        if (styleElement) {
+            // Save the current CSS
+            const css = styleElement.innerHTML;
+
+            // Force a re-render by changing the content
+            styleElement.innerHTML = '';
+            setTimeout(() => {
+                if (styleElement) styleElement.innerHTML = css;
+
+                // Add inline styles to ensure visibility
+                const tables = document.querySelectorAll('.dataview.table-view-table');
+                tables.forEach(table => {
+                    const headers = table.querySelectorAll('th');
+                    headers.forEach((header, index) => {
+                        // const day = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'][index % 7];
+                        (header as HTMLElement).setAttribute('style', `color: var(--color-monday) !important; border-bottom: 3px solid var(--color-monday) !important; font-weight: bold !important;`);
+                    });
+                });
+            }, 10);
+        }
     }
 
     public async getWeeklyTasks(year: number, week: number, searchPath: string = "/"): Promise<WeeklyTaskGroup> {
@@ -124,52 +169,175 @@ export class WeeklyTaskApi {
         container: HTMLElement
     ): HTMLElement {
         // Create container for the weekly view
-        const weeklyContainer = container.createEl('div', { cls: 'weekly-task-view' });
+        const weeklyContainer = container.createEl('div');
+        weeklyContainer.setAttribute('style', 'margin: 1em 0; padding: 10px; border-radius: 6px;');
 
         // Get dates for the week
         const dates = this.getDatesForWeek(filename);
 
-        // Create weekdays table
-        const weekdaysContainer = weeklyContainer.createEl('div', { cls: 'weekdays-container' });
-        const weekdaysHeader = weekdaysContainer.createEl('h4');
-        weekdaysHeader.textContent = "📅 Week Overview";
+        // Render weekdays section
+        const weekdays: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+        this.renderWeekdaysTable(tasks, dates, weekdays, weeklyContainer, component, filename);
 
-        // Create headers array with dates
-        const weekdayHeaders = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(
-            day => `${day} (${dates[day as DayOfWeek].getDate()})`
-        );
+        // Render weekend section
+        const weekendDays: DayOfWeek[] = ['Saturday', 'Sunday'];
+        this.renderWeekendTable(tasks, dates, weekendDays, weeklyContainer, component, filename);
 
-        // Create task cells array
-        const weekdayTasks = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => {
-            const taskContainer = createEl('div', { cls: 'task-container' });
-            this.dv.taskList(tasks[day as DayOfWeek], false, taskContainer, component, filename);
+        return weeklyContainer;
+    }
+
+    /**
+     * Renders the weekdays (Monday-Friday) table
+     */
+    private renderWeekdaysTable(
+        tasks: WeeklyTaskGroup,
+        dates: Record<DayOfWeek, Date>,
+        weekdays: DayOfWeek[],
+        parentContainer: HTMLElement,
+        component: Component,
+        filename: string
+    ): void {
+        // Create weekdays table container
+        const weekdaysContainer = parentContainer.createEl('div');
+
+        // Add header
+
+        // Create headers with dates
+        const weekdayHeaders = weekdays.map(day => {
+            return `<span style="color: #5899D6; font-weight: bold; display: block; padding: 4px;">${day} (${dates[day].getDate()})</span>`;
+        });
+
+        // Create task cells
+        const weekdayTasks = weekdays.map(day => {
+            const taskContainer = createEl('div');
+            this.dv.taskList(tasks[day], false, taskContainer, component, filename);
+            this.styleCompletedTasks(taskContainer);
             return taskContainer;
         });
 
         // Render weekdays table
         this.dv.table(weekdayHeaders, [weekdayTasks], weekdaysContainer, component, filename);
 
-        // Create weekend table
-        const weekendContainer = weeklyContainer.createEl('div', { cls: 'weekend-container' });
-        const weekendHeader = weekendContainer.createEl('h4');
-        weekendHeader.textContent = "🌅 Weekend";
+        // Style the table
+        this.styleTable(weekdaysContainer, '#5899D6');
+    }
 
-        // Create weekend headers with dates
-        const weekendHeaders = ['Saturday', 'Sunday'].map(
-            day => `${day} (${dates[day as DayOfWeek].getDate()})`
-        );
+    /**
+     * Renders the weekend (Saturday-Sunday) table
+     */
+    private renderWeekendTable(
+        tasks: WeeklyTaskGroup,
+        dates: Record<DayOfWeek, Date>,
+        weekendDays: DayOfWeek[],
+        parentContainer: HTMLElement,
+        component: Component,
+        filename: string
+    ): void {
+        // Create weekend table container
+        const weekendContainer = parentContainer.createEl('div');
 
-        // Create weekend task cells
-        const weekendTasks = ['Saturday', 'Sunday'].map(day => {
-            const taskContainer = createEl('div', { cls: 'task-container' });
-            this.dv.taskList(tasks[day as DayOfWeek], false, taskContainer, component, filename);
+
+        // Create headers with dates
+        const weekendHeaders = weekendDays.map(day => {
+            return `<span style="color: ${this.weekendColor}; font-weight: bold; display: block; padding: 4px;">${day} (${dates[day].getDate()})</span>`;
+        });
+
+        // Create task cells
+        const weekendTasks = weekendDays.map(day => {
+            const taskContainer = createEl('div');
+            this.dv.taskList(tasks[day], false, taskContainer, component, filename);
+            this.styleCompletedTasks(taskContainer);
             return taskContainer;
         });
 
         // Render weekend table
         this.dv.table(weekendHeaders, [weekendTasks], weekendContainer, component, filename);
 
-        return weeklyContainer;
+        // Style the table
+        this.styleTable(weekendContainer, this.weekendColor);
+    }
+
+    /**
+     * Applies styling to completed tasks
+     */
+    private styleCompletedTasks(container: HTMLElement): void {
+        setTimeout(() => {
+            const checkboxes = container.querySelectorAll('.task-list-item-checkbox:checked');
+            checkboxes.forEach(checkbox => {
+                const textEl = checkbox.closest('.task-list-item');
+                if (textEl) {
+                    textEl.setAttribute('style', 'color: #3faf78 !important; text-decoration: line-through;');
+                }
+                checkbox.setAttribute('style', 'background-color: #3faf78 !important; border-color: #3faf78 !important;');
+            });
+        }, 10);
+    }
+
+    /**
+     * Applies styling to table elements
+     */
+    private styleTable(container: HTMLElement, headerColor: string): void {
+        setTimeout(() => {
+            const table = container.querySelector('.dataview.table-view-table');
+            if (table) {
+                table.setAttribute('style', 'width: 100%; border-collapse: collapse; border: none;');
+
+                // Style headers
+                const headerRow = table.querySelector('thead tr');
+                if (headerRow) {
+                    headerRow.setAttribute('style', `background-color: ${this.getHeaderBgColor(headerColor)}; border-radius: 4px;`);
+                }
+
+                const headers = table.querySelectorAll('th');
+                headers.forEach(header => {
+                    header.setAttribute('style', `color: ${headerColor}; border-bottom: 2px solid ${headerColor}; font-weight: bold; padding: 8px; text-align: left; background-color: ${this.getHeaderBgColor(headerColor)};`);
+                });
+
+                // Style cells - removing borders
+                const cells = table.querySelectorAll('td');
+                cells.forEach(cell => {
+                    cell.setAttribute('style', 'padding: 8px; vertical-align: top; border: none;');
+
+                    // Remove border from task list containers
+                    const taskContainers = cell.querySelectorAll('.contains-task-list');
+                    taskContainers.forEach(taskContainer => {
+                        taskContainer.setAttribute('style', 'border: none; padding: 0; margin: 0;');
+                    });
+                });
+            }
+        }, 10);
+    }
+
+    /**
+     * Get a light background color based on the header color
+     */
+    private getHeaderBgColor(headerColor: string): string {
+        // For blue headers (#5899D6) - light blue background
+        if (headerColor === '#5899D6') {
+            return 'rgba(88, 153, 214, 0.1)';
+        }
+        // For lavender headers (#9C89B8) - light lavender background
+        else if (headerColor === this.weekendColor) {
+            return 'rgba(156, 137, 184, 0.1)';
+        }
+        // Default fallback - convert hex to rgba with 0.1 opacity
+        return this.hexToRgba(headerColor, 0.1);
+    }
+
+    /**
+     * Convert hex color to rgba with specified opacity
+     */
+    private hexToRgba(hex: string, alpha: number): string {
+        // Remove the hash
+        hex = hex.replace('#', '');
+
+        // Parse the hex values
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+
+        // Return rgba color
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
     private renderWeeklyTasksAsList(
@@ -179,12 +347,14 @@ export class WeeklyTaskApi {
         container: HTMLElement
     ): HTMLElement {
         // Create container for the weekly view
-        const weeklyContainer = container.createEl('div', { cls: 'weekly-task-view' });
+        const weeklyContainer = container.createEl('div');
+        weeklyContainer.setAttribute('style', 'margin: 1em 0; padding: 10px; border-radius: 6px;');
 
         // Create weekdays section
-        const weekdaysContainer = weeklyContainer.createEl('div', { cls: 'weekdays-container' });
+        const weekdaysContainer = weeklyContainer.createEl('div');
         const weekdaysHeader = weekdaysContainer.createEl('h4');
         weekdaysHeader.textContent = "📅 Weekdays";
+        weekdaysHeader.setAttribute('style', 'margin-top: 15px; margin-bottom: 10px; padding: 5px; background-color: rgba(88, 153, 214, 0.1); border-radius: 4px;');
 
         // Get dates for the week
         const dates = this.getDatesForWeek(filename);
@@ -192,28 +362,73 @@ export class WeeklyTaskApi {
         // Render weekdays
         const weekdays: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
         weekdays.forEach(day => {
-            const dayContainer = weekdaysContainer.createEl('div', { cls: 'day-container' });
+            const dayContainer = weekdaysContainer.createEl('div');
+            dayContainer.setAttribute('style', 'margin: 0.5em 0;');
+
             const dayHeader = dayContainer.createEl('h5');
             dayHeader.textContent = `${day} (${dates[day].getDate()})`;
+            dayHeader.setAttribute('style', 'color: #5899D6; border-bottom: 2px solid #5899D6; font-weight: bold; padding: 6px; margin-bottom: 10px; background-color: rgba(88, 153, 214, 0.05); border-radius: 4px;');
 
             // Render tasks for this day using Dataview's taskList
             this.dv.taskList(tasks[day], false, dayContainer, component, filename);
+
+            // Apply styles to completed tasks and remove borders
+            setTimeout(() => {
+                // Style completed tasks
+                const checkboxes = dayContainer.querySelectorAll('.task-list-item-checkbox:checked');
+                checkboxes.forEach(checkbox => {
+                    const textEl = checkbox.closest('.task-list-item');
+                    if (textEl) {
+                        textEl.setAttribute('style', 'color: #3faf78 !important; text-decoration: line-through;');
+                    }
+                    checkbox.setAttribute('style', 'background-color: #3faf78 !important; border-color: #3faf78 !important;');
+                });
+
+                // Remove borders from task lists
+                const taskLists = dayContainer.querySelectorAll('.contains-task-list');
+                taskLists.forEach(list => {
+                    list.setAttribute('style', 'border: none; padding: 0; margin: 0;');
+                });
+            }, 10);
         });
 
         // Create weekend section
-        const weekendContainer = weeklyContainer.createEl('div', { cls: 'weekend-container' });
+        const weekendContainer = weeklyContainer.createEl('div');
         const weekendHeader = weekendContainer.createEl('h4');
         weekendHeader.textContent = "🌅 Weekend";
+        weekendHeader.setAttribute('style', `margin-top: 15px; margin-bottom: 10px; padding: 5px; background-color: ${this.getHeaderBgColor(this.weekendColor)}; border-radius: 4px;`);
 
         // Render weekend days
         const weekendDays: DayOfWeek[] = ['Saturday', 'Sunday'];
         weekendDays.forEach(day => {
-            const dayContainer = weekendContainer.createEl('div', { cls: 'day-container' });
+            const dayContainer = weekendContainer.createEl('div');
+            dayContainer.setAttribute('style', 'margin: 0.5em 0;');
+
             const dayHeader = dayContainer.createEl('h5');
             dayHeader.textContent = `${day} (${dates[day].getDate()})`;
+            dayHeader.setAttribute('style', `color: ${this.weekendColor}; border-bottom: 2px solid ${this.weekendColor}; font-weight: bold; padding: 6px; margin-bottom: 10px; background-color: ${this.getHeaderBgColor(this.weekendColor).replace('0.1', '0.05')}; border-radius: 4px;`);
 
             // Render tasks for this day using Dataview's taskList
             this.dv.taskList(tasks[day], false, dayContainer, component, filename);
+
+            // Apply styles to completed tasks and remove borders
+            setTimeout(() => {
+                // Style completed tasks
+                const checkboxes = dayContainer.querySelectorAll('.task-list-item-checkbox:checked');
+                checkboxes.forEach(checkbox => {
+                    const textEl = checkbox.closest('.task-list-item');
+                    if (textEl) {
+                        textEl.setAttribute('style', 'color: #3faf78 !important; text-decoration: line-through;');
+                    }
+                    checkbox.setAttribute('style', 'background-color: #3faf78 !important; border-color: #3faf78 !important;');
+                });
+
+                // Remove borders from task lists
+                const taskLists = dayContainer.querySelectorAll('.contains-task-list');
+                taskLists.forEach(list => {
+                    list.setAttribute('style', 'border: none; padding: 0; margin: 0;');
+                });
+            }, 10);
         });
 
         return weeklyContainer;

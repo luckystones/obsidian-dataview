@@ -5,8 +5,8 @@ Home
 [[example lists]]
 
 [[example tasks]]
-- [ ] this is the task 📅 2021-01-05
-- [ ] this is the task 📅 2021-01-04
+- [x] this is the task 📅 2021-01-05
+- [x] this is the task 📅 2021-01-04
 - [x] this is the task 📅 2021-01-06    
 - [ ] this is the task 📅 2021-10-10
 - [ ] this is the task 📅 2022-10-11

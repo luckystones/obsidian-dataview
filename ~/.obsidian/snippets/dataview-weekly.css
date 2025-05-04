@@ -1,0 +1,77 @@
+/* Weekly Task View Styling */
+:root {
+    --color-green: #3faf78;
+    --color-green-rgb: 63, 175, 120;
+    --color-weekday: #5899D6;
+    /* Blue for weekdays */
+    --color-weekend: #F49AC2;
+    /* Pink for weekends */
+}
+
+/* Main container */
+.weekly-task-view {
+    margin: 1em 0;
+    padding: 10px;
+    border-radius: 6px;
+    background-color: var(--background-primary);
+}
+
+/* Weekday header styling - all same color */
+.day-monday h5,
+.day-tuesday h5,
+.day-wednesday h5,
+.day-thursday h5,
+.day-friday h5,
+th.day-monday,
+th.day-tuesday,
+th.day-wednesday,
+th.day-thursday,
+th.day-friday,
+.weekdays-container th {
+    color: var(--color-weekday) !important;
+    border-bottom: 2px solid var(--color-weekday) !important;
+    font-weight: bold !important;
+}
+
+/* Weekend header styling - all same color */
+.day-saturday h5,
+.day-sunday h5,
+th.day-saturday,
+th.day-sunday,
+.weekend-container th {
+    color: var(--color-weekend) !important;
+    border-bottom: 2px solid var(--color-weekend) !important;
+    font-weight: bold !important;
+}
+
+/* Section headers */
+.weekdays-container h4,
+.weekend-container h4 {
+    margin-top: 15px;
+    margin-bottom: 5px;
+}
+
+/* Make completed tasks green */
+.contains-task-list .task-list-item.is-checked {
+    color: var(--color-green) !important;
+    text-decoration: line-through;
+}
+
+.contains-task-list .task-list-item-checkbox:checked {
+    background-color: var(--color-green) !important;
+    border-color: var(--color-green) !important;
+}
+
+/* Debug button */
+.debug-reset-css {
+    margin-top: 10px;
+    padding: 5px 10px;
+    background-color: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.debug-reset-css:hover {
+    background-color: #e5e5e5;
+}

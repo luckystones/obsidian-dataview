@@ -1,4 +1,4 @@
-- [x] Normal task, tags inherited from page [completion:: 2021-10-23]
+- [ ] Normal task, tags inherited from page [completion:: 2021-10-23]
 * [ ] Task with a #tag, adds to inherited page tags
 	* [ ] Task that inherits tag from above and page tagssss
 * [x] Completed task ✅ 2021-08-06 📅 2021-08-07
