@@ -496,32 +496,51 @@ export class WeeklyTaskApi {
     }
 
     private getDatesForWeek(filename: string): Record<DayOfWeek, Date> {
-        const weekNumber = filename.split('W')[1];
-        const year = filename.split('-')[0];
-        console.log('YEAR ------- ', year);
-        console.log('WEEK NUMBER ------- ', weekNumber);
-        const monday = this.findFirstMonday(parseInt(year), parseInt(weekNumber));
-        const tuesday = new Date(monday);
-        tuesday.setDate(tuesday.getDate() + 1);
-        const wednesday = new Date(monday);
-        wednesday.setDate(wednesday.getDate() + 2);
-        const thursday = new Date(monday);
-        thursday.setDate(thursday.getDate() + 3);
-        const friday = new Date(monday);
-        friday.setDate(friday.getDate() + 4);
-        const saturday = new Date(monday);
-        saturday.setDate(saturday.getDate() + 5);
-        const sunday = new Date(monday);
-        sunday.setDate(sunday.getDate() + 6);
-        return {
-            Monday: monday,
-            Tuesday: tuesday,
-            Wednesday: wednesday,
-            Thursday: thursday,
-            Friday: friday,
-            Saturday: saturday,
-            Sunday: sunday
-        };
+        try {
+            const weekNumber = parseInt(filename.split('W')[1]);
+            const year = parseInt(filename.split('-')[0]);
+            console.log('YEAR ------- ', year);
+            console.log('WEEK NUMBER ------- ', weekNumber);
+
+            // Get the date range for the week
+            const { firstMonday } = this.getWeekDateRange(year, weekNumber);
+
+            // Calculate all days of the week from the first Monday
+            const tuesday = new Date(firstMonday);
+            tuesday.setDate(firstMonday.getDate() + 1);
+            const wednesday = new Date(firstMonday);
+            wednesday.setDate(firstMonday.getDate() + 2);
+            const thursday = new Date(firstMonday);
+            thursday.setDate(firstMonday.getDate() + 3);
+            const friday = new Date(firstMonday);
+            friday.setDate(firstMonday.getDate() + 4);
+            const saturday = new Date(firstMonday);
+            saturday.setDate(firstMonday.getDate() + 5);
+            const sunday = new Date(firstMonday);
+            sunday.setDate(firstMonday.getDate() + 6);
+
+            return {
+                Monday: firstMonday,
+                Tuesday: tuesday,
+                Wednesday: wednesday,
+                Thursday: thursday,
+                Friday: friday,
+                Saturday: saturday,
+                Sunday: sunday
+            };
+        } catch (error) {
+            console.error('Error in getDatesForWeek:', error);
+            // Return Invalid Dates in case of error
+            return {
+                Monday: new Date(NaN),
+                Tuesday: new Date(NaN),
+                Wednesday: new Date(NaN),
+                Thursday: new Date(NaN),
+                Friday: new Date(NaN),
+                Saturday: new Date(NaN),
+                Sunday: new Date(NaN)
+            };
+        }
     }
 
     private findFirstMonday(year: number, week: number): Date {
@@ -702,18 +721,20 @@ export class WeeklyTaskApi {
             // Filter tasks based on date criteria
             const taskSearch = allTasks.where((task: STask): boolean => {
                 try {
+                    // Get the date range for the specified week
+                    const { firstMonday, lastSunday } = this.getWeekDateRange(parseInt(year), week);
 
                     const hasCompletionMatch = task.completed &&
                         task.completion &&
-                        this.isDateInWeek(task.completion as DateTime, parseInt(year), week);
+                        this.isDateInWeek(task.completion as DateTime, firstMonday, lastSunday);
 
                     // Check if due date exists and is in the same year and week
                     const hasDueMatch = task.due &&
-                        this.isDateInWeek(task.due as DateTime, parseInt(year), week);
+                        this.isDateInWeek(task.due as DateTime, firstMonday, lastSunday);
 
                     // Check if scheduled date exists and is in the same year and week
                     const hasScheduledMatch = task.scheduled &&
-                        this.isDateInWeek(task.scheduled as DateTime, parseInt(year), week);
+                        this.isDateInWeek(task.scheduled as DateTime, firstMonday, lastSunday);
 
                     // Return true if any of the date criteria match
                     return !!(hasCompletionMatch || hasDueMatch || hasScheduledMatch);
@@ -734,19 +755,54 @@ export class WeeklyTaskApi {
     }
 
     /**
-     * Checks if a date falls within the specified week of the year
-     * @param toBeCheckedDate The date in milliseconds to check
-     * @param year The year to check against
-     * @param week The week number to check against
-     * @returns True if the date is in the specified week, false otherwise
+     * Calculates the date range (first Monday and last Sunday) for a specific week of the year
+     * @param year The year 
+     * @param week The week number
+     * @returns An object containing firstMonday and lastSunday dates
      */
-    private isDateInWeek(toBeCheckedDate: DateTime | number, year: number, week: number): boolean {
+    private getWeekDateRange(year: number, week: number): { firstMonday: Date, lastSunday: Date } {
+        if (!year || !week) {
+            console.error('Invalid year or week parameters:', year, week);
+            return {
+                firstMonday: new Date(NaN),
+                lastSunday: new Date(NaN)
+            };
+        }
+
         try {
-            if (!year || !week) {
-                console.error('Invalid year or week parameters:', year, week);
-                return false;
+            const firstMonday = this.findFirstMonday(year, week);
+
+            if (isNaN(firstMonday.getTime())) {
+                console.error('Invalid first Monday for year/week:', year, week);
+                return {
+                    firstMonday: new Date(NaN),
+                    lastSunday: new Date(NaN)
+                };
             }
 
+            const lastSunday = new Date(firstMonday);
+            lastSunday.setDate(firstMonday.getDate() + 6);
+            lastSunday.setHours(23, 59, 59, 999);
+
+            return { firstMonday, lastSunday };
+        } catch (e) {
+            console.error('Error calculating week range:', e);
+            return {
+                firstMonday: new Date(NaN),
+                lastSunday: new Date(NaN)
+            };
+        }
+    }
+
+    /**
+     * Checks if a date falls within the specified week of the year
+     * @param toBeCheckedDate The date in milliseconds to check
+     * @param firstMonday The first day (Monday) of the week
+     * @param lastSunday The last day (Sunday) of the week
+     * @returns True if the date is in the specified week, false otherwise
+     */
+    private isDateInWeek(toBeCheckedDate: DateTime | number, firstMonday: Date, lastSunday: Date): boolean {
+        try {
             // Convert toBeCheckedDate to a Date object, handling Luxon DateTime correctly
             let dueDate: Date;
             if (typeof toBeCheckedDate === 'object' && 'toJSDate' in toBeCheckedDate) {
@@ -761,24 +817,12 @@ export class WeeklyTaskApi {
                 return false;
             }
 
-            // Get date range for the specified week
-            try {
-                const firstMonday = this.findFirstMonday(year, week);
-
-                if (isNaN(firstMonday.getTime())) {
-                    console.error('Invalid first Monday for year/week:', year, week);
-                    return false;
-                }
-
-                const lastSunday = new Date(firstMonday);
-                lastSunday.setDate(firstMonday.getDate() + 6);
-                lastSunday.setHours(23, 59, 59, 999);
-
-                return dueDate >= firstMonday && dueDate <= lastSunday;
-            } catch (e) {
-                console.error('Error calculating week range:', e);
+            if (isNaN(firstMonday.getTime()) || isNaN(lastSunday.getTime())) {
+                console.error('Invalid week range:', firstMonday, lastSunday);
                 return false;
             }
+
+            return dueDate >= firstMonday && dueDate <= lastSunday;
         } catch (e) {
             console.error('Error in isDateInWeek:', e);
             return false;
