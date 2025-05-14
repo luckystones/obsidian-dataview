@@ -7,6 +7,7 @@ export default class WeeklyTaskView {
     private dv: DataviewApi;
     private component: Component;
     private container: HTMLElement;
+    private TIMEZONE_OFFSET: number = 3;
 
     constructor(dv: DataviewApi, component: Component, container: HTMLElement) {
         this.dv = dv;
@@ -14,7 +15,8 @@ export default class WeeklyTaskView {
         this.container = container;
     }
 
-    public async getWeeklyTasks() {
+    public async getWeeklyTasks2() {
+        console.log('GETTING WEEKLY TASKS ------- ')
         const pages = this.dv.pages() as unknown as DataArray<SMarkdownPage>;
         const currentPage = pages.find(p => p.file?.path === this.container.getAttribute('data-path'));
         const filename = currentPage?.file?.name;
@@ -23,15 +25,15 @@ export default class WeeklyTaskView {
             throw new Error('Could not determine current file');
         }
 
-        const result = await this.searchForTasksWithTag('"/"', filename);
+        const result = await this.searchForTasksWithTag('/game/objectives', filename);
         const tasks = this.processTaskResults(result, filename);
         return this.renderWeeklyView(tasks);
     }
 
-    private processTaskResults(result: STask[], filename: string) {
+    private processTaskResults(result: DataArray<STask>, filename: string) {
         const groupedTasks: Record<string, STask[]> = {};
         const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
+        console.log('PROCESSING TASKS WITH NEW VERSION ------- ')
         result.forEach((task: STask) => {
             let referenceDate: Date | undefined;
             if (task.completion) {
@@ -72,7 +74,7 @@ export default class WeeklyTaskView {
         const weekNumber = filename.split('W')[1];
         const year = filename.split('-')[0];
 
-        const targetMonday = this.findFirstMonday(Number(year), Number(weekNumber));
+        const targetMonday = this.findMondayOfTheGivenWeek(Number(year), Number(weekNumber));
 
         const monday = new Date(targetMonday);
         const tuesday = new Date(targetMonday); tuesday.setDate(monday.getDate() + 1);
@@ -162,45 +164,98 @@ export default class WeeklyTaskView {
         return lastDay;
     }
 
-    private async searchForTasksWithTag(searchpath: string, filename: string): Promise<STask[]> {
+    public searchForTasksWithTag(searchpath: string, filename: string): DataArray<STask> {
         try {
-            const year = filename.split('-')[0];
-            const weekNumber = filename.split('W')[1];
-            const yearNum = parseInt(year);
+            // Get pages from the given search path
+            const basicSearch = this.dv.pages(searchpath);
 
-            const query = `TASK
-                FROM ${searchpath}
-                WHERE (completed AND completion.year = ${yearNum} AND completion.weekyear = ${weekNumber}) 
-                OR (due AND due.year = ${yearNum} AND due.weekyear = ${weekNumber}) 
-                OR (scheduled AND scheduled.year = ${yearNum} AND scheduled.weekyear = ${weekNumber})
-                `;
-
-            const result = await this.dv.query(query);
-            if (result.successful) {
-                return result.value.values as STask[];
+            // If no pages found, return an empty task array
+            if (!basicSearch || !basicSearch.length) {
+                return this.dv.array([]) as DataArray<STask>;
             }
-            throw new Error(result.error);
+
+            // Create a flattened array of all tasks from all pages
+            const allTasks = basicSearch.flatMap(page => {
+                // Check if the page has a file property with tasks
+                if (page &&
+                    typeof page === 'object' &&
+                    page.file &&
+                    typeof page.file === 'object' &&
+                    'tasks' in page.file &&
+                    Array.isArray(page.file.tasks)) {
+                    return page.file.tasks;
+                }
+                return [];
+            }) as DataArray<STask>;
+
+            // Filter tasks based on date criteria
+            const taskSearch = allTasks.where((task: STask): boolean => {
+                // Check if completion date exists and is in the same year and week
+                const hasCompletionMatch = task.completed &&
+                    task.completion &&
+                    typeof task.completion === 'number' &&
+                    this.isDateInWeek(task.completion, filename);
+
+                // Check if due date exists and is in the same year and week
+                const hasDueMatch = task.due &&
+                    typeof task.due === 'number' &&
+                    this.isDateInWeek(task.due, filename);
+
+                // Check if scheduled date exists and is in the same year and week
+                const hasScheduledMatch = task.scheduled &&
+                    typeof task.scheduled === 'number' &&
+                    this.isDateInWeek(task.scheduled, filename);
+
+                // Explicitly return a boolean
+                const result = !!(hasCompletionMatch || hasDueMatch || hasScheduledMatch);
+                if (result) {
+                    console.log('hasCompletionMatch', hasCompletionMatch);
+                    console.log('hasDueMatch', hasDueMatch);
+                    console.log('hasScheduledMatch', hasScheduledMatch);
+                    console.log(task.text);
+                }
+                return result;
+            });
+
+            return taskSearch;
         } catch (e) {
-            new Notice('Invalid Dataview query: ' + e.message);
+            new Notice(
+                'Invalid Dataview query: ' + String(e)
+            );
             throw e;
         }
     }
 
-    private findFirstMonday(year: number, week: number): Date {
-        const janFirst = new Date(year, 0, 1);
+    private findMondayOfTheGivenWeek(year: number, week: number): Date {
+        // Create date at noon to avoid timezone issues
+        const janFirst = new Date(year, 0, 1, this.TIMEZONE_OFFSET, 0, 0, 0);
+        console.log('janFirst', janFirst);
         const daysToFirstMonday = (8 - janFirst.getDay()) % 7;
-        const firstMondayOfYear = new Date(year, 0, 1 + daysToFirstMonday);
+        console.log('daysToFirstMonday', daysToFirstMonday);
+        const firstMondayOfYear = new Date(year, 0, 1 + daysToFirstMonday, this.TIMEZONE_OFFSET, 0, 0, 0);
+        console.log('firstMondayOfYear', firstMondayOfYear);
         const targetMonday = new Date(firstMondayOfYear);
         targetMonday.setDate(firstMondayOfYear.getDate() + (week - 1) * 7);
+        console.log('targetMonday', targetMonday);
         return targetMonday;
+    }
+
+    private findSundayOfTheGivenWeek(year: number, week: number): Date {
+        const firstMonday = this.findMondayOfTheGivenWeek(year, week);
+        const lastSunday = new Date(firstMonday);
+        lastSunday.setDate(firstMonday.getDate() + 6);
+        lastSunday.setHours(23, 59, 59, 999);
+        return lastSunday;
     }
 
     private isDateInWeek(dateMillis: number, filename: string): boolean {
         const dueDate = new Date(dateMillis);
         const [year, week] = filename.split('-W').map(Number);
-        const firstMonday = this.findFirstMonday(year, week);
-        const lastSunday = new Date(firstMonday);
-        lastSunday.setDate(firstMonday.getDate() + 6);
+        const firstMonday = this.findMondayOfTheGivenWeek(year, week);
+        const lastSunday = this.findSundayOfTheGivenWeek(year, week);
+        console.log('dueDate', dueDate, 'firstMonday', firstMonday, 'lastSunday', lastSunday);
+        console.log('dueDate >= firstMonday', dueDate >= firstMonday);
+        console.log('dueDate <= lastSunday', dueDate <= lastSunday);
         return dueDate >= firstMonday && dueDate <= lastSunday;
     }
 }

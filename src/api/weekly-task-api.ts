@@ -144,6 +144,7 @@ export class WeeklyTaskApi {
     }
 
     public async getWeeklyTasks(year: number, week: number, searchPath: string = "/"): Promise<WeeklyTaskGroup> {
+        console.log('GETTING WEEKLY TASKS API one------- ')
         try {
             const query = `TASK
                 WHERE (completed AND completion.year = ${year} AND completion.weekyear = ${week}) 
