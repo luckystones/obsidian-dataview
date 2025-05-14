@@ -1,6 +1,8 @@
 import { STask } from 'data-model/serialized/markdown';
-import { Component } from 'obsidian';
+import { Component, Notice } from 'obsidian';
+import { DataArray } from './data-array';
 import { DataviewApi } from './plugin-api';
+import { DateTime } from 'luxon';
 
 export type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
 
@@ -61,20 +63,34 @@ export class WeeklyTaskApi {
         const {
             year,
             week,
-            searchPath = "/",
-            filename = `${year}-W${week}`,
+            searchPath = '"/game/objectives"',
             component,
             container,
             tableView = true,
-            trimTaskText = true
+            trimTaskText = true,
         } = options;
 
         if (!component || !container) {
             throw new Error('Component and container are required for rendering tasks');
         }
 
-        // Get the tasks
-        const tasks = await this.getWeeklyTasks(year, week, searchPath);
+        let filename: string;
+
+        // If year and week are provided, use them to create the filename
+        if (year && week) {
+            filename = `${year}-W${week}`;
+        } else {
+            // Otherwise try to get active file name
+            const activeFileName = this.dv.app.workspace.getActiveFile()?.name;
+            if (!activeFileName) {
+                throw new Error('Could not determine current file and no year/week provided');
+            }
+            filename = activeFileName;
+        }
+
+        console.log('SEARCH PATH ------- ', searchPath, 'FILENAME ------- ', filename);
+        const result = await this.searchForTasksWithTag(searchPath, filename);
+        const tasks = this.processTaskResults(result, filename);
 
         // If trimTaskText is true, update each task's text to show only the description
         if (trimTaskText) {
@@ -94,14 +110,52 @@ export class WeeklyTaskApi {
         }
 
         // Render them
-        const result = tableView
+        const result2 = tableView
             ? this.renderWeeklyTasksAsTable(tasks, filename, component, container)
             : this.renderWeeklyTasksAsList(tasks, filename, component, container);
 
         // Ensure styles are applied
         this.reloadStyles();
 
-        return result;
+        return result2;
+    }
+
+    /**
+     * Process task results into day-grouped format
+     * @param result Task results from search
+     * @param filename Filename in YYYY-WW format
+     * @returns Tasks grouped by day of week
+     */
+    private processTaskResults(result: DataArray<STask>, filename: string): WeeklyTaskGroup {
+        const groupedTasks: WeeklyTaskGroup = {
+            Monday: [],
+            Tuesday: [],
+            Wednesday: [],
+            Thursday: [],
+            Friday: [],
+            Saturday: [],
+            Sunday: []
+        };
+
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+
+        result.forEach((task: STask) => {
+            let referenceDate: Date | undefined;
+            if (task.completion) {
+                referenceDate = new Date(task.completion as number);
+            } else if (task.scheduled) {
+                referenceDate = new Date(task.scheduled as number);
+            } else if (task.due) {
+                referenceDate = new Date(task.due as number);
+            }
+
+            if (referenceDate) {
+                const dayOfWeek = days[referenceDate.getDay()] as DayOfWeek;
+                groupedTasks[dayOfWeek].push(task);
+            }
+        });
+
+        return groupedTasks;
     }
 
     /**
@@ -175,6 +229,7 @@ export class WeeklyTaskApi {
 
         // Get dates for the week
         const dates = this.getDatesForWeek(filename);
+        console.log('DATES ------- ', dates);
 
         // Render weekdays section
         const weekdays: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -202,6 +257,7 @@ export class WeeklyTaskApi {
         const weekdaysContainer = parentContainer.createEl('div');
 
         // Add header
+
 
         // Create headers with dates
         const weekdayHeaders = weekdays.map(day => {
@@ -367,7 +423,9 @@ export class WeeklyTaskApi {
             dayContainer.setAttribute('style', 'margin: 0.5em 0;');
 
             const dayHeader = dayContainer.createEl('h5');
-            dayHeader.textContent = `${day} (${dates[day].getDate()})`;
+            const date = dates[day];
+            const formattedDate = isNaN(date.getTime()) ? '?' : date.getDate().toString();
+            dayHeader.textContent = `${day} (${formattedDate})`;
             dayHeader.setAttribute('style', 'color: #5899D6; border-bottom: 2px solid #5899D6; font-weight: bold; padding: 6px; margin-bottom: 10px; background-color: rgba(88, 153, 214, 0.05); border-radius: 4px;');
 
             // Render tasks for this day using Dataview's taskList
@@ -406,7 +464,9 @@ export class WeeklyTaskApi {
             dayContainer.setAttribute('style', 'margin: 0.5em 0;');
 
             const dayHeader = dayContainer.createEl('h5');
-            dayHeader.textContent = `${day} (${dates[day].getDate()})`;
+            const date = dates[day];
+            const formattedDate = isNaN(date.getTime()) ? '?' : date.getDate().toString();
+            dayHeader.textContent = `${day} (${formattedDate})`;
             dayHeader.setAttribute('style', `color: ${this.weekendColor}; border-bottom: 2px solid ${this.weekendColor}; font-weight: bold; padding: 6px; margin-bottom: 10px; background-color: ${this.getHeaderBgColor(this.weekendColor).replace('0.1', '0.05')}; border-radius: 4px;`);
 
             // Render tasks for this day using Dataview's taskList
@@ -436,27 +496,56 @@ export class WeeklyTaskApi {
     }
 
     private getDatesForWeek(filename: string): Record<DayOfWeek, Date> {
-        const [year, weekNumber] = filename.split('-W').map(Number);
-        const firstMonday = this.findFirstMonday(year, weekNumber);
-
+        const weekNumber = filename.split('W')[1];
+        const year = filename.split('-')[0];
+        console.log('YEAR ------- ', year);
+        console.log('WEEK NUMBER ------- ', weekNumber);
+        const monday = this.findFirstMonday(parseInt(year), parseInt(weekNumber));
+        const tuesday = new Date(monday);
+        tuesday.setDate(tuesday.getDate() + 1);
+        const wednesday = new Date(monday);
+        wednesday.setDate(wednesday.getDate() + 2);
+        const thursday = new Date(monday);
+        thursday.setDate(thursday.getDate() + 3);
+        const friday = new Date(monday);
+        friday.setDate(friday.getDate() + 4);
+        const saturday = new Date(monday);
+        saturday.setDate(saturday.getDate() + 5);
+        const sunday = new Date(monday);
+        sunday.setDate(sunday.getDate() + 6);
         return {
-            Monday: new Date(firstMonday),
-            Tuesday: new Date(firstMonday.getTime() + 24 * 60 * 60 * 1000),
-            Wednesday: new Date(firstMonday.getTime() + 2 * 24 * 60 * 60 * 1000),
-            Thursday: new Date(firstMonday.getTime() + 3 * 24 * 60 * 60 * 1000),
-            Friday: new Date(firstMonday.getTime() + 4 * 24 * 60 * 60 * 1000),
-            Saturday: new Date(firstMonday.getTime() + 5 * 24 * 60 * 60 * 1000),
-            Sunday: new Date(firstMonday.getTime() + 6 * 24 * 60 * 60 * 1000)
+            Monday: monday,
+            Tuesday: tuesday,
+            Wednesday: wednesday,
+            Thursday: thursday,
+            Friday: friday,
+            Saturday: saturday,
+            Sunday: sunday
         };
     }
 
     private findFirstMonday(year: number, week: number): Date {
-        const janFirst = new Date(year, 0, 1);
-        const daysToFirstMonday = (8 - janFirst.getDay()) % 7;
-        const firstMondayOfYear = new Date(year, 0, 1 + daysToFirstMonday);
-        const targetMonday = new Date(firstMondayOfYear);
-        targetMonday.setDate(firstMondayOfYear.getDate() + (week - 1) * 7);
-        return targetMonday;
+        try {
+            // Validate inputs
+
+            const janFirst = new Date(year, 0, 1);
+
+            // Find the first Monday of the year
+            // getDay() returns 0 for Sunday, 1 for Monday, etc.
+            const dayOfWeek = janFirst.getDay();
+            const daysToFirstMonday = dayOfWeek === 1 ? 0 : (dayOfWeek === 0 ? 1 : 8 - dayOfWeek);
+
+            const firstMondayOfYear = new Date(year, 0, 1 + daysToFirstMonday);
+
+            // Calculate the target Monday based on the week number
+            const targetMonday = new Date(firstMondayOfYear);
+            targetMonday.setDate(firstMondayOfYear.getDate() + (week - 1) * 7);
+
+            return targetMonday;
+        } catch (e) {
+            console.error('Error in findFirstMonday:', e);
+            throw e;
+        }
     }
 
     private groupTasksByDay(tasks: STask[], year: number, week: number): WeeklyTaskGroup {
@@ -561,5 +650,138 @@ export class WeeklyTaskApi {
         result.description = result.description.replace(/\s+/g, ' ').trim();
 
         return result;
+    }
+
+    /**
+     * Searches for tasks with a specific tag in the given path
+     * @param searchpath The path to search for tasks in
+     * @param filename The current filename (in format YYYY-WW)
+     * @returns An array of tasks matching the criteria
+     */
+    public searchForTasksWithTag(searchpath: string, filename: string): DataArray<STask> {
+        try {
+            // Parse year and week from filename
+            const [year, weekStr] = filename.split('-W');
+            const week = parseInt(weekStr, 10);
+
+            if (isNaN(week) || !year) {
+                console.error('Invalid filename format:', filename);
+                console.error('Expected format: YYYY-WW');
+                return this.dv.array([]) as DataArray<STask>;
+            }
+
+            console.log('Searching for tasks in year:', year, 'week:', week);
+
+            // Get pages from the given search path
+            const basicSearch = this.dv.pages('"game/objectives"');
+
+            console.log('BASIC SEARCH ------- ', basicSearch);
+            // If no pages found, return an empty task array
+            if (!basicSearch || !basicSearch.length) {
+                console.log('NO PAGES FOUND ------- ');
+                return this.dv.array([]) as DataArray<STask>;
+            }
+
+            // Create a flattened array of all tasks from all pages
+            const allTasks = basicSearch.flatMap(page => {
+                // Check if the page has a file property with tasks
+                if (page &&
+                    typeof page === 'object' &&
+                    page.file &&
+                    typeof page.file === 'object' &&
+                    'tasks' in page.file &&
+                    Array.isArray(page.file.tasks)) {
+                    return page.file.tasks;
+                }
+                console.log('NO TASKS FOUND ------- ');
+                return [];
+            }) as DataArray<STask>;
+
+            console.log('Found', allTasks.length, 'total tasks');
+
+            // Filter tasks based on date criteria
+            const taskSearch = allTasks.where((task: STask): boolean => {
+                try {
+
+                    const hasCompletionMatch = task.completed &&
+                        task.completion &&
+                        this.isDateInWeek(task.completion as DateTime, parseInt(year), week);
+
+                    // Check if due date exists and is in the same year and week
+                    const hasDueMatch = task.due &&
+                        this.isDateInWeek(task.due as DateTime, parseInt(year), week);
+
+                    // Check if scheduled date exists and is in the same year and week
+                    const hasScheduledMatch = task.scheduled &&
+                        this.isDateInWeek(task.scheduled as DateTime, parseInt(year), week);
+
+                    // Return true if any of the date criteria match
+                    return !!(hasCompletionMatch || hasDueMatch || hasScheduledMatch);
+                } catch (e) {
+                    console.error('Error processing task:', task.text, e);
+                    return false;
+                }
+            });
+
+            return taskSearch;
+        } catch (e) {
+            console.error('Error in searchForTasksWithTag:', e);
+            new Notice(
+                'Invalid Dataview query: ' + String(e)
+            );
+            return this.dv.array([]) as DataArray<STask>;
+        }
+    }
+
+    /**
+     * Checks if a date falls within the specified week of the year
+     * @param toBeCheckedDate The date in milliseconds to check
+     * @param year The year to check against
+     * @param week The week number to check against
+     * @returns True if the date is in the specified week, false otherwise
+     */
+    private isDateInWeek(toBeCheckedDate: DateTime | number, year: number, week: number): boolean {
+        try {
+            if (!year || !week) {
+                console.error('Invalid year or week parameters:', year, week);
+                return false;
+            }
+
+            // Convert toBeCheckedDate to a Date object, handling Luxon DateTime correctly
+            let dueDate: Date;
+            if (typeof toBeCheckedDate === 'object' && 'toJSDate' in toBeCheckedDate) {
+                // This is a Luxon DateTime object
+                dueDate = toBeCheckedDate.toJSDate();
+            } else {
+                dueDate = new Date(toBeCheckedDate as number);
+            }
+
+            if (isNaN(dueDate.getTime())) {
+                console.error('Invalid date:', toBeCheckedDate);
+                return false;
+            }
+
+            // Get date range for the specified week
+            try {
+                const firstMonday = this.findFirstMonday(year, week);
+
+                if (isNaN(firstMonday.getTime())) {
+                    console.error('Invalid first Monday for year/week:', year, week);
+                    return false;
+                }
+
+                const lastSunday = new Date(firstMonday);
+                lastSunday.setDate(firstMonday.getDate() + 6);
+                lastSunday.setHours(23, 59, 59, 999);
+
+                return dueDate >= firstMonday && dueDate <= lastSunday;
+            } catch (e) {
+                console.error('Error calculating week range:', e);
+                return false;
+            }
+        } catch (e) {
+            console.error('Error in isDateInWeek:', e);
+            return false;
+        }
     }
 } 

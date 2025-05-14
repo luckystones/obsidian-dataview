@@ -1,18 +1,21 @@
 import { DataArray } from 'api/data-array';
 import { DataviewApi } from 'api/plugin-api';
+import { WeeklyTaskApi } from 'api/weekly-task-view';
 import { SMarkdownPage, STask } from 'data-model/serialized/markdown';
-import { Component, Notice } from 'obsidian';
+import { Component } from 'obsidian';
 
-export default class WeeklyTaskView {
+export default class OldWeeklyView {
     private dv: DataviewApi;
     private component: Component;
     private container: HTMLElement;
     private TIMEZONE_OFFSET: number = 3;
+    private weeklyTaskApi: WeeklyTaskApi;
 
     constructor(dv: DataviewApi, component: Component, container: HTMLElement) {
         this.dv = dv;
         this.component = component;
         this.container = container;
+        this.weeklyTaskApi = new WeeklyTaskApi(dv);
     }
 
     public async getWeeklyTasks2() {
@@ -25,7 +28,7 @@ export default class WeeklyTaskView {
             throw new Error('Could not determine current file');
         }
 
-        const result = await this.searchForTasksWithTag('/game/objectives', filename);
+        const result = await this.weeklyTaskApi.searchForTasksWithTag('"/game/objectives"', filename);
         const tasks = this.processTaskResults(result, filename);
         return this.renderWeeklyView(tasks);
     }
@@ -162,68 +165,6 @@ export default class WeeklyTaskView {
         const firstMonday = new Date(date.setDate(date.getDate() + (1 - dayOffset + (Number(weekNumber) - 1) * 7)));
         const lastDay = new Date(firstMonday.setDate(firstMonday.getDate() + 6));
         return lastDay;
-    }
-
-    public searchForTasksWithTag(searchpath: string, filename: string): DataArray<STask> {
-        try {
-            // Get pages from the given search path
-            const basicSearch = this.dv.pages(searchpath);
-
-            // If no pages found, return an empty task array
-            if (!basicSearch || !basicSearch.length) {
-                return this.dv.array([]) as DataArray<STask>;
-            }
-
-            // Create a flattened array of all tasks from all pages
-            const allTasks = basicSearch.flatMap(page => {
-                // Check if the page has a file property with tasks
-                if (page &&
-                    typeof page === 'object' &&
-                    page.file &&
-                    typeof page.file === 'object' &&
-                    'tasks' in page.file &&
-                    Array.isArray(page.file.tasks)) {
-                    return page.file.tasks;
-                }
-                return [];
-            }) as DataArray<STask>;
-
-            // Filter tasks based on date criteria
-            const taskSearch = allTasks.where((task: STask): boolean => {
-                // Check if completion date exists and is in the same year and week
-                const hasCompletionMatch = task.completed &&
-                    task.completion &&
-                    typeof task.completion === 'number' &&
-                    this.isDateInWeek(task.completion, filename);
-
-                // Check if due date exists and is in the same year and week
-                const hasDueMatch = task.due &&
-                    typeof task.due === 'number' &&
-                    this.isDateInWeek(task.due, filename);
-
-                // Check if scheduled date exists and is in the same year and week
-                const hasScheduledMatch = task.scheduled &&
-                    typeof task.scheduled === 'number' &&
-                    this.isDateInWeek(task.scheduled, filename);
-
-                // Explicitly return a boolean
-                const result = !!(hasCompletionMatch || hasDueMatch || hasScheduledMatch);
-                if (result) {
-                    console.log('hasCompletionMatch', hasCompletionMatch);
-                    console.log('hasDueMatch', hasDueMatch);
-                    console.log('hasScheduledMatch', hasScheduledMatch);
-                    console.log(task.text);
-                }
-                return result;
-            });
-
-            return taskSearch;
-        } catch (e) {
-            new Notice(
-                'Invalid Dataview query: ' + String(e)
-            );
-            throw e;
-        }
     }
 
     private findMondayOfTheGivenWeek(year: number, week: number): Date {

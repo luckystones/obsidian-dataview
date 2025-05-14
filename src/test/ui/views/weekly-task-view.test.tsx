@@ -3,7 +3,7 @@ import { DataviewApi } from 'api/plugin-api';
 import { STask } from 'data-model/serialized/markdown';
 import { Component } from 'obsidian';
 import { DEFAULT_QUERY_SETTINGS } from 'settings';
-import WeeklyTaskView from 'ui/views/weekly-task-view';
+import OldWeeklyView from 'ui/views/old-weekly-view';
 
 // Mock dependencies
 jest.mock('obsidian', () => ({
@@ -18,7 +18,7 @@ describe('WeeklyTaskView', () => {
     let mockDv: Partial<DataviewApi>;
     let mockComponent: Component;
     let mockContainer: HTMLElement;
-    let weeklyTaskView: WeeklyTaskView;
+    let weeklyTaskView: OldWeeklyView;
 
     beforeEach(() => {
         // Reset mocks
@@ -57,7 +57,7 @@ describe('WeeklyTaskView', () => {
         mockComponent = new Component();
 
         // Create WeeklyTaskView instance
-        weeklyTaskView = new WeeklyTaskView(mockDv as DataviewApi, mockComponent, mockContainer);
+        weeklyTaskView = new OldWeeklyView(mockDv as DataviewApi, mockComponent, mockContainer);
     });
 
 
