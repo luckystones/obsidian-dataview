@@ -88,7 +88,6 @@ export class WeeklyTaskApi {
             filename = activeFileName;
         }
 
-        console.log('SEARCH PATH ------- ', searchPath, 'FILENAME ------- ', filename);
         const result = await this.searchForTasksWithTag(searchPath, filename);
         const tasks = this.processTaskResults(result, filename);
 
@@ -198,7 +197,6 @@ export class WeeklyTaskApi {
     }
 
     public async getWeeklyTasks(year: number, week: number, searchPath: string = "/"): Promise<WeeklyTaskGroup> {
-        console.log('GETTING WEEKLY TASKS API one------- ')
         try {
             const query = `TASK
                 WHERE (completed AND completion.year = ${year} AND completion.weekyear = ${week}) 
@@ -229,7 +227,6 @@ export class WeeklyTaskApi {
 
         // Get dates for the week
         const dates = this.getDatesForWeek(filename);
-        console.log('DATES ------- ', dates);
 
         // Render weekdays section
         const weekdays: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -499,8 +496,6 @@ export class WeeklyTaskApi {
         try {
             const weekNumber = parseInt(filename.split('W')[1]);
             const year = parseInt(filename.split('-')[0]);
-            console.log('YEAR ------- ', year);
-            console.log('WEEK NUMBER ------- ', weekNumber);
 
             // Get the date range for the week
             const { firstMonday } = this.getWeekDateRange(year, weekNumber);
@@ -689,15 +684,12 @@ export class WeeklyTaskApi {
                 return this.dv.array([]) as DataArray<STask>;
             }
 
-            console.log('Searching for tasks in year:', year, 'week:', week);
 
             // Get pages from the given search path
             const basicSearch = this.dv.pages('"game/objectives"');
 
-            console.log('BASIC SEARCH ------- ', basicSearch);
             // If no pages found, return an empty task array
             if (!basicSearch || !basicSearch.length) {
-                console.log('NO PAGES FOUND ------- ');
                 return this.dv.array([]) as DataArray<STask>;
             }
 
@@ -712,11 +704,9 @@ export class WeeklyTaskApi {
                     Array.isArray(page.file.tasks)) {
                     return page.file.tasks;
                 }
-                console.log('NO TASKS FOUND ------- ');
                 return [];
             }) as DataArray<STask>;
 
-            console.log('Found', allTasks.length, 'total tasks');
 
             // Filter tasks based on date criteria
             const taskSearch = allTasks.where((task: STask): boolean => {
