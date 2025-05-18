@@ -108,46 +108,6 @@ function TaskItem({ item }: { item: STask }) {
                 .setDisabled(true);
         });
 
-        // PAST OPTIONS - Move backwards in time
-
-        // 1 month earlier
-        menu.addItem((item) => {
-            item.setTitle("1 month earlier")
-                .onClick(() => scheduleTask(context.app.vault, -30));
-        });
-
-        // 2 weeks earlier
-        menu.addItem((item) => {
-            item.setTitle("2 weeks earlier")
-                .onClick(() => scheduleTask(context.app.vault, -14));
-        });
-
-        // 1 week earlier
-        menu.addItem((item) => {
-            item.setTitle("1 week earlier")
-                .onClick(() => scheduleTask(context.app.vault, -7));
-        });
-
-        // 3 days earlier
-        menu.addItem((item) => {
-            item.setTitle("3 days earlier")
-                .onClick(() => scheduleTask(context.app.vault, -3));
-        });
-
-        // 1 day earlier (yesterday)
-        menu.addItem((item) => {
-            item.setTitle("1 day earlier (yesterday)")
-                .onClick(() => scheduleTask(context.app.vault, -1));
-        });
-
-        // TODAY
-        menu.addItem((item) => {
-            item.setTitle("Today")
-                .onClick(() => {
-                    const today = DateTime.now().toFormat("yyyy-MM-dd");
-                    scheduleTask(context.app.vault, 0, today);
-                });
-        });
 
         // FUTURE OPTIONS - Move forward in time
 
@@ -180,10 +140,49 @@ function TaskItem({ item }: { item: STask }) {
             item.setTitle("1 month later")
                 .onClick(() => scheduleTask(context.app.vault, 30));
         });
+        // TODAY
+        menu.addItem((item) => {
+            item.setTitle("Today")
+                .onClick(() => {
+                    const today = DateTime.now().toFormat("yyyy-MM-dd");
+                    scheduleTask(context.app.vault, 0, today);
+                });
+        });
 
         // Separator
         menu.addSeparator();
 
+        // PAST OPTIONS - Move backwards in time
+
+        // 1 month earlier
+        menu.addItem((item) => {
+            item.setTitle("1 month earlier")
+                .onClick(() => scheduleTask(context.app.vault, -30));
+        });
+
+        // 2 weeks earlier
+        menu.addItem((item) => {
+            item.setTitle("2 weeks earlier")
+                .onClick(() => scheduleTask(context.app.vault, -14));
+        });
+
+        // 1 week earlier
+        menu.addItem((item) => {
+            item.setTitle("1 week earlier")
+                .onClick(() => scheduleTask(context.app.vault, -7));
+        });
+
+        // 3 days earlier
+        menu.addItem((item) => {
+            item.setTitle("3 days earlier")
+                .onClick(() => scheduleTask(context.app.vault, -3));
+        });
+
+        // 1 day earlier (yesterday)
+        menu.addItem((item) => {
+            item.setTitle("1 day earlier (yesterday)")
+                .onClick(() => scheduleTask(context.app.vault, -1));
+        });
         // Custom date
         menu.addItem((item) => {
             item.setTitle("Specific date...")
@@ -207,10 +206,13 @@ function TaskItem({ item }: { item: STask }) {
                 return;
             }
 
-            // Extract existing dates from the original task text
+            // Determine which text property contains dates
+            const referenceText = getReferenceText(item);
+            console.log("Using reference text:", referenceText);
+
+            // Extract existing dates from the reference text
             console.log("Item:", item);
-            console.log("Original text:", item.originalText);
-            const existingDates = extractDatesFromTask(item.originalText);
+            const existingDates = extractDatesFromTask(referenceText);
             console.log("Existing dates:", existingDates);
 
             // Determine reference date with priority: completion > due > scheduled > today
@@ -236,17 +238,46 @@ function TaskItem({ item }: { item: STask }) {
             // Update the task with the new date
             updateTaskWithDates(newDate);
 
+            // Function to determine which text property contains dates
+            function getReferenceText(task: STask): string {
+                // Check if originalText property exists and contains dates
+                if (task.originalText && containsDatePatterns(task.originalText)) {
+                    return task.originalText;
+                }
+                // Check if text property contains dates
+                else if (containsDatePatterns(task.text)) {
+                    return task.text;
+                }
+                // Default to originalText if it exists, otherwise use text
+                else {
+                    return task.originalText || task.text;
+                }
+            }
+
+            // Function to check if text contains any date patterns
+            function containsDatePatterns(text: string): boolean {
+                const datePatterns = [
+                    /\[(due|scheduled|completion|start|created)::\s*\d{4}-\d{2}-\d{2}\]/,  // Inline field
+                    /[📅⏳✅🛫⊕]\s*\d{4}-\d{2}-\d{2}/  // Emoji shorthand
+                ];
+
+                return datePatterns.some(pattern => pattern.test(text));
+            }
+
             // Function to update the task with new dates
             function updateTaskWithDates(dateStr: string) {
                 let updatedText: string;
-                const useEmojiFormat = detectEmojiDateFormat(item.originalText);
                 const isCompleted = item.status === "x";
 
+                // Use the same reference text for updating
+                const textToUpdate = getReferenceText(item);
+                const useEmojiFormat = detectEmojiDateFormat(textToUpdate);
+
                 if (useEmojiFormat) {
-                    updatedText = updateEmojiDates(item.originalText, dateStr, isCompleted);
+                    updatedText = updateEmojiDates(textToUpdate, dateStr, isCompleted);
                 } else {
                     // Update due date
-                    let textWithDueDate = setInlineField(item.originalText, "due", dateStr);
+                    let textWithDueDate = setInlineField(textToUpdate, "due", dateStr);
 
                     // If task is completed, also update completion date
                     if (isCompleted) {
@@ -256,7 +287,7 @@ function TaskItem({ item }: { item: STask }) {
                     }
                 }
 
-                console.log("Original text:", item.originalText);
+                console.log("Reference text:", textToUpdate);
                 console.log("Updated text:", updatedText);
 
                 // Rewrite the task with updated text
@@ -305,7 +336,6 @@ function TaskItem({ item }: { item: STask }) {
             if (completionDateEmoji) {
                 result.completion = completionDateEmoji[1];
             }
-            console.log("Extracted dates:", result);
             return result;
         }
 
