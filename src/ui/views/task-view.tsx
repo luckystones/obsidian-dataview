@@ -27,34 +27,34 @@ function DatePicker({ onSelect, onClose, initialDate = '', position = { x: 0, y:
     initialDate?: string,
     position?: { x: number, y: number }
 }) {
-    const [date, setDate] = useState(initialDate || DateTime.now().toFormat('yyyy-MM-dd'));
     const inputRef = useRef<HTMLInputElement>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
 
-    // When the component mounts, focus and click the input to open the date picker
+    // Function to handle date change
+    const handleDateChange = (e: Event) => {
+        const target = e.target as HTMLInputElement;
+        if (target.value) {
+            onSelect(target.value);
+            onClose();
+        }
+    };
+
+    // When the component mounts, directly click to open the calendar
     useEffect(() => {
         if (inputRef.current) {
+            // Focus and click to open the native calendar
             inputRef.current.focus();
-            inputRef.current.click();
-        }
-    }, []);
+            inputRef.current.showPicker();
 
-    // Handle click outside to close the date picker
-    useEffect(() => {
-        const handleClickOutside = (e: Event) => {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-                onClose();
+            // Listen for changes directly on the input
+            inputRef.current.addEventListener('change', handleDateChange);
+        }
+
+        return () => {
+            if (inputRef.current) {
+                inputRef.current.removeEventListener('change', handleDateChange);
             }
         };
-
-        // Add global event listener
-        document.addEventListener('mousedown', handleClickOutside);
-
-        // Clean up
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [onClose]);
+    }, []);
 
     // Handle events to prevent propagation
     const stopPropagation = (e: Event) => {
@@ -63,48 +63,27 @@ function DatePicker({ onSelect, onClose, initialDate = '', position = { x: 0, y:
 
     return (
         <div
-            ref={containerRef}
             className="dataview-date-picker"
             style={{
                 position: 'fixed',
                 zIndex: 1000,
                 top: `${position.y}px`,
                 left: `${position.x}px`,
-                background: 'var(--background-primary)',
-                padding: '10px',
-                borderRadius: '5px',
-                border: '1px solid var(--background-modifier-border)',
-                boxShadow: '0 2px 8px var(--background-modifier-box-shadow)'
+                opacity: 0.01, // Nearly invisible container
+                width: '1px',  // Minimal size
+                height: '1px'
             }}
             onClick={stopPropagation}
             onMouseDown={stopPropagation}
         >
-            <div style={{ marginBottom: '8px' }}>
-                <input
-                    ref={inputRef}
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate((e.target as HTMLInputElement).value)}
-                    style={{ display: 'block', width: '100%' }}
-                />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                <button onClick={onClose}>
-                    Cancel
-                </button>
-                <button
-                    onClick={() => {
-                        onSelect(date);
-                        onClose();
-                    }}
-                    style={{
-                        background: 'var(--interactive-accent)',
-                        color: 'var(--text-on-accent)'
-                    }}
-                >
-                    Schedule
-                </button>
-            </div>
+            <input
+                ref={inputRef}
+                type="date"
+                defaultValue={initialDate || DateTime.now().toFormat('yyyy-MM-dd')}
+                style={{
+                    opacity: 0.01,
+                }}
+            />
         </div>
     );
 }
@@ -313,6 +292,25 @@ function TaskItem({ item }: { item: STask }) {
                 .setDisabled(true);
         });
 
+        // Custom date
+        menu.addItem((item) => {
+            item.setTitle("Specific date...")
+                .onClick((event) => {
+                    // Stop propagation to prevent parent click handlers from firing
+                    if (event) {
+                        event.stopPropagation();
+                        event.preventDefault();
+                    }
+
+                    // Position the date picker near where the user clicked
+                    setDatePickerPosition({
+                        x: evt.clientX,
+                        y: evt.clientY - 100
+                    });
+                    setShowDatePicker(true);
+                });
+        });
+
         // FUTURE OPTIONS - Move forward in time
 
         // 1 day later (tomorrow)
@@ -387,25 +385,6 @@ function TaskItem({ item }: { item: STask }) {
         menu.addItem((item) => {
             item.setTitle("1 day earlier (yesterday)")
                 .onClick(() => scheduleTask(context.app.vault, -1));
-        });
-
-        // Custom date
-        menu.addItem((item) => {
-            item.setTitle("Specific date...")
-                .onClick((event) => {
-                    // Stop propagation to prevent parent click handlers from firing
-                    if (event) {
-                        event.stopPropagation();
-                        event.preventDefault();
-                    }
-
-                    // Position the date picker near where the user clicked
-                    setDatePickerPosition({
-                        x: evt.clientX,
-                        y: evt.clientY
-                    });
-                    setShowDatePicker(true);
-                });
         });
 
         // Show the menu
