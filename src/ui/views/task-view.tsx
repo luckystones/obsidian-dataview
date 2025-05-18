@@ -3,22 +3,111 @@ import { LIST_ITEM_REGEX } from "data-import/markdown-file";
 import { SListEntry, SListItem, STask } from "data-model/serialized/markdown";
 import { GroupElement, Grouping, Groupings } from "data-model/value";
 import { DateTime } from "luxon";
-import { MarkdownRenderChild, Platform, Vault, Menu, Notice } from "obsidian";
+import { MarkdownRenderChild, Menu, Notice, Platform, Vault } from "obsidian";
 import { Fragment, h } from "preact";
-import { useContext } from "preact/hooks";
+import { useContext, useState, useEffect, useRef } from "preact/hooks";
 import { executeTask } from "query/engine";
 import { Query } from "query/query";
 import {
     DataviewContext,
-    ErrorPre,
+    DataviewInit,
     ErrorMessage,
+    ErrorPre,
     Lit,
     Markdown,
     ReactRenderer,
     useIndexBackedState,
-    DataviewInit,
 } from "ui/markdown";
 import { asyncTryOrPropagate } from "util/normalize";
+
+// Simple Preact date picker component
+function DatePicker({ onSelect, onClose, initialDate = '', position = { x: 0, y: 0 } }: {
+    onSelect: (date: string) => void,
+    onClose: () => void,
+    initialDate?: string,
+    position?: { x: number, y: number }
+}) {
+    const [date, setDate] = useState(initialDate || DateTime.now().toFormat('yyyy-MM-dd'));
+    const inputRef = useRef<HTMLInputElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    // When the component mounts, focus and click the input to open the date picker
+    useEffect(() => {
+        if (inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.click();
+        }
+    }, []);
+
+    // Handle click outside to close the date picker
+    useEffect(() => {
+        const handleClickOutside = (e: Event) => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+                onClose();
+            }
+        };
+
+        // Add global event listener
+        document.addEventListener('mousedown', handleClickOutside);
+
+        // Clean up
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [onClose]);
+
+    // Handle events to prevent propagation
+    const stopPropagation = (e: Event) => {
+        e.stopPropagation();
+    };
+
+    return (
+        <div
+            ref={containerRef}
+            className="dataview-date-picker"
+            style={{
+                position: 'fixed',
+                zIndex: 1000,
+                top: `${position.y}px`,
+                left: `${position.x}px`,
+                background: 'var(--background-primary)',
+                padding: '10px',
+                borderRadius: '5px',
+                border: '1px solid var(--background-modifier-border)',
+                boxShadow: '0 2px 8px var(--background-modifier-box-shadow)'
+            }}
+            onClick={stopPropagation}
+            onMouseDown={stopPropagation}
+        >
+            <div style={{ marginBottom: '8px' }}>
+                <input
+                    ref={inputRef}
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate((e.target as HTMLInputElement).value)}
+                    style={{ display: 'block', width: '100%' }}
+                />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button onClick={onClose}>
+                    Cancel
+                </button>
+                <button
+                    onClick={() => {
+                        onSelect(date);
+                        onClose();
+                    }}
+                    style={{
+                        background: 'var(--interactive-accent)',
+                        color: 'var(--text-on-accent)'
+                    }}
+                >
+                    Schedule
+                </button>
+            </div>
+        </div>
+    );
+}
 
 /** Function used to test if a given event correspond to a pressed link */
 function wasLinkPressed(evt: preact.JSX.TargetedMouseEvent<HTMLElement>): boolean {
@@ -28,10 +117,126 @@ function wasLinkPressed(evt: preact.JSX.TargetedMouseEvent<HTMLElement>): boolea
 /** JSX component which renders a task element recursively. */
 function TaskItem({ item }: { item: STask }) {
     let context = useContext(DataviewContext);
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [datePickerPosition, setDatePickerPosition] = useState({ x: 0, y: 0 });
+
+    // Schedule task function (moved outside onContextMenu handler)
+    async function scheduleTask(vault: Vault, daysToAdd: number, customDate?: string) {
+        // If custom date is provided, use it directly
+        if (customDate) {
+            updateTaskWithDates(customDate);
+            return;
+        }
+
+        // Determine which text property contains dates
+        const referenceText = getReferenceText(item);
+        console.log("Using reference text:", referenceText);
+
+        // Extract existing dates from the reference text
+        console.log("Item:", item);
+        const existingDates = extractDatesFromTask(referenceText);
+        console.log("Existing dates:", existingDates);
+
+        // Determine reference date with priority: completion > due > scheduled > today
+        let referenceDate: DateTime;
+        if (existingDates.completion) {
+            referenceDate = DateTime.fromISO(existingDates.completion);
+            console.log("Using completion date as reference:", existingDates.completion);
+        } else if (existingDates.due) {
+            referenceDate = DateTime.fromISO(existingDates.due);
+            console.log("Using due date as reference:", existingDates.due);
+        } else if (existingDates.scheduled) {
+            referenceDate = DateTime.fromISO(existingDates.scheduled);
+            console.log("Using scheduled date as reference:", existingDates.scheduled);
+        } else {
+            referenceDate = DateTime.now();
+            console.log("No existing dates found, using today as reference");
+        }
+
+        // Calculate new date based on reference date
+        const newDate = referenceDate.plus({ days: daysToAdd }).toFormat("yyyy-MM-dd");
+        console.log("New date calculated:", newDate);
+
+        // Update the task with the new date
+        updateTaskWithDates(newDate);
+    }
+
+    // Function to determine which text property contains dates
+    function getReferenceText(task: STask): string {
+        // Check if originalText property exists and contains dates
+        if (task.originalText && containsDatePatterns(task.originalText)) {
+            return task.originalText;
+        }
+        // Check if text property contains dates
+        else if (containsDatePatterns(task.text)) {
+            return task.text;
+        }
+        // Default to originalText if it exists, otherwise use text
+        else {
+            return task.originalText || task.text;
+        }
+    }
+
+    // Function to check if text contains any date patterns
+    function containsDatePatterns(text: string): boolean {
+        const datePatterns = [
+            /\[(due|scheduled|completion|start|created)::\s*\d{4}-\d{2}-\d{2}\]/,  // Inline field
+            /[📅⏳✅🛫⊕]\s*\d{4}-\d{2}-\d{2}/  // Emoji shorthand
+        ];
+
+        return datePatterns.some(pattern => pattern.test(text));
+    }
+
+    // Function to update the task with new dates
+    function updateTaskWithDates(dateStr: string) {
+        let updatedText: string;
+        const isCompleted = item.status === "x";
+
+        // Use the same reference text for updating
+        const textToUpdate = getReferenceText(item);
+        const useEmojiFormat = detectEmojiDateFormat(textToUpdate);
+
+        if (useEmojiFormat) {
+            updatedText = updateEmojiDates(textToUpdate, dateStr, isCompleted);
+        } else {
+            // Update due date
+            let textWithDueDate = setInlineField(textToUpdate, "due", dateStr);
+
+            // If task is completed, also update completion date
+            if (isCompleted) {
+                updatedText = setInlineField(textWithDueDate, "completion", dateStr);
+            } else {
+                updatedText = setInlineField(textWithDueDate, "scheduled", dateStr);
+            }
+        }
+
+        console.log("Reference text:", textToUpdate);
+        console.log("Updated text:", updatedText);
+
+        // Rewrite the task with updated text
+        rewriteTaskForScheduled(context.app.vault, item, item.status, updatedText).then(() => {
+            // Show a notice
+            new Notice(`Task ${isCompleted ? "completed and " : ""}scheduled for ${dateStr}`);
+
+            // Refresh dataview
+            context.app.workspace.trigger("dataview:refresh-views");
+        });
+    }
 
     // Navigate to the given task on click.
     const onClicked = (evt: preact.JSX.TargetedMouseEvent<HTMLElement>) => {
         if (wasLinkPressed(evt)) {
+            return;
+        }
+
+        // Don't navigate if date picker is shown
+        if (showDatePicker) {
+            return;
+        }
+
+        // Check if click was inside date picker (by className)
+        if (evt.target && (evt.target as HTMLElement).closest('.dataview-date-picker')) {
+            evt.stopPropagation();
             return;
         }
 
@@ -108,7 +313,6 @@ function TaskItem({ item }: { item: STask }) {
                 .setDisabled(true);
         });
 
-
         // FUTURE OPTIONS - Move forward in time
 
         // 1 day later (tomorrow)
@@ -140,6 +344,7 @@ function TaskItem({ item }: { item: STask }) {
             item.setTitle("1 month later")
                 .onClick(() => scheduleTask(context.app.vault, 30));
         });
+
         // TODAY
         menu.addItem((item) => {
             item.setTitle("Today")
@@ -183,194 +388,28 @@ function TaskItem({ item }: { item: STask }) {
             item.setTitle("1 day earlier (yesterday)")
                 .onClick(() => scheduleTask(context.app.vault, -1));
         });
+
         // Custom date
         menu.addItem((item) => {
             item.setTitle("Specific date...")
-                .onClick(() => {
-                    const date = prompt("Enter date (YYYY-MM-DD):",
-                        DateTime.now().toFormat("yyyy-MM-dd"));
-                    if (date) {
-                        scheduleTask(context.app.vault, 0, date);
+                .onClick((event) => {
+                    // Stop propagation to prevent parent click handlers from firing
+                    if (event) {
+                        event.stopPropagation();
+                        event.preventDefault();
                     }
+
+                    // Position the date picker near where the user clicked
+                    setDatePickerPosition({
+                        x: evt.clientX,
+                        y: evt.clientY
+                    });
+                    setShowDatePicker(true);
                 });
         });
 
         // Show the menu
         menu.showAtMouseEvent(evt);
-
-        // Function to schedule the task
-        async function scheduleTask(vault: Vault, daysToAdd: number, customDate?: string) {
-            // If custom date is provided, use it directly
-            if (customDate) {
-                updateTaskWithDates(customDate);
-                return;
-            }
-
-            // Determine which text property contains dates
-            const referenceText = getReferenceText(item);
-            console.log("Using reference text:", referenceText);
-
-            // Extract existing dates from the reference text
-            console.log("Item:", item);
-            const existingDates = extractDatesFromTask(referenceText);
-            console.log("Existing dates:", existingDates);
-
-            // Determine reference date with priority: completion > due > scheduled > today
-            let referenceDate: DateTime;
-            if (existingDates.completion) {
-                referenceDate = DateTime.fromISO(existingDates.completion);
-                console.log("Using completion date as reference:", existingDates.completion);
-            } else if (existingDates.due) {
-                referenceDate = DateTime.fromISO(existingDates.due);
-                console.log("Using due date as reference:", existingDates.due);
-            } else if (existingDates.scheduled) {
-                referenceDate = DateTime.fromISO(existingDates.scheduled);
-                console.log("Using scheduled date as reference:", existingDates.scheduled);
-            } else {
-                referenceDate = DateTime.now();
-                console.log("No existing dates found, using today as reference");
-            }
-
-            // Calculate new date based on reference date
-            const newDate = referenceDate.plus({ days: daysToAdd }).toFormat("yyyy-MM-dd");
-            console.log("New date calculated:", newDate);
-
-            // Update the task with the new date
-            updateTaskWithDates(newDate);
-
-            // Function to determine which text property contains dates
-            function getReferenceText(task: STask): string {
-                // Check if originalText property exists and contains dates
-                if (task.originalText && containsDatePatterns(task.originalText)) {
-                    return task.originalText;
-                }
-                // Check if text property contains dates
-                else if (containsDatePatterns(task.text)) {
-                    return task.text;
-                }
-                // Default to originalText if it exists, otherwise use text
-                else {
-                    return task.originalText || task.text;
-                }
-            }
-
-            // Function to check if text contains any date patterns
-            function containsDatePatterns(text: string): boolean {
-                const datePatterns = [
-                    /\[(due|scheduled|completion|start|created)::\s*\d{4}-\d{2}-\d{2}\]/,  // Inline field
-                    /[📅⏳✅🛫⊕]\s*\d{4}-\d{2}-\d{2}/  // Emoji shorthand
-                ];
-
-                return datePatterns.some(pattern => pattern.test(text));
-            }
-
-            // Function to update the task with new dates
-            function updateTaskWithDates(dateStr: string) {
-                let updatedText: string;
-                const isCompleted = item.status === "x";
-
-                // Use the same reference text for updating
-                const textToUpdate = getReferenceText(item);
-                const useEmojiFormat = detectEmojiDateFormat(textToUpdate);
-
-                if (useEmojiFormat) {
-                    updatedText = updateEmojiDates(textToUpdate, dateStr, isCompleted);
-                } else {
-                    // Update due date
-                    let textWithDueDate = setInlineField(textToUpdate, "due", dateStr);
-
-                    // If task is completed, also update completion date
-                    if (isCompleted) {
-                        updatedText = setInlineField(textWithDueDate, "completion", dateStr);
-                    } else {
-                        updatedText = setInlineField(textWithDueDate, "scheduled", dateStr);
-                    }
-                }
-
-                console.log("Reference text:", textToUpdate);
-                console.log("Updated text:", updatedText);
-
-                // Rewrite the task with updated text
-                rewriteTaskForScheduled(vault, item, item.status, updatedText).then(() => {
-                    // Show a notice
-                    new Notice(`Task ${isCompleted ? "completed and " : ""}scheduled for ${dateStr}`);
-
-                    // Refresh dataview
-                    context.app.workspace.trigger("dataview:refresh-views");
-                });
-            }
-        }
-
-        // Function to extract dates from task text
-        function extractDatesFromTask(text: string): { due?: string; scheduled?: string; completion?: string } {
-            const result: { due?: string; scheduled?: string; completion?: string } = {};
-
-            // Extract dates from inline fields
-            const dueMatch = text.match(/\[due::\s*(\d{4}-\d{2}-\d{2})\]/);
-            if (dueMatch) {
-                result.due = dueMatch[1];
-            }
-
-            const scheduledMatch = text.match(/\[scheduled::\s*(\d{4}-\d{2}-\d{2})\]/);
-            if (scheduledMatch) {
-                result.scheduled = scheduledMatch[1];
-            }
-
-            const completionMatch = text.match(/\[completion::\s*(\d{4}-\d{2}-\d{2})\]/);
-            if (completionMatch) {
-                result.completion = completionMatch[1];
-            }
-
-            // Extract dates from emoji shorthand format
-            const dueDateEmoji = text.match(/📅\s*(\d{4}-\d{2}-\d{2})/);
-            if (dueDateEmoji) {
-                result.due = dueDateEmoji[1];
-            }
-
-            const scheduledDateEmoji = text.match(/⏳\s*(\d{4}-\d{2}-\d{2})/);
-            if (scheduledDateEmoji) {
-                result.scheduled = scheduledDateEmoji[1];
-            }
-
-            const completionDateEmoji = text.match(/✅\s*(\d{4}-\d{2}-\d{2})/);
-            if (completionDateEmoji) {
-                result.completion = completionDateEmoji[1];
-            }
-            return result;
-        }
-
-        // Function to detect if emoji date format is being used
-        function detectEmojiDateFormat(text: string): boolean {
-            const emojiDateRegex = /[\p{Emoji}\p{Emoji_Presentation}][\p{Emoji_Modifier}]?\s*\d{4}-\d{2}-\d{2}/gu;
-            return emojiDateRegex.test(text);
-        }
-
-        // Function to update dates in emoji format
-        function updateEmojiDates(text: string, date: string, isCompleted: boolean = false): string {
-            // Define emoji constants
-            const dueDateEmoji = "📅";
-            const completionEmoji = "✅";
-
-            // Remove existing due dates (both emoji and inline field)
-            let result = text.replace(/(\s+)?📅\s*\d{4}-\d{2}-\d{2}/g, "")
-                .replace(/(\s+)?\[due::.*?\]/g, "");
-
-            // Remove existing scheduled dates (both emoji and inline field)
-            result = result.replace(/(\s+)?⏳\s*\d{4}-\d{2}-\d{2}/g, "")
-                .replace(/(\s+)?\[scheduled::.*?\]/g, "");
-
-            // If completed, also remove and update completion date
-            if (isCompleted) {
-                result = result.replace(/(\s+)?✅\s*\d{4}-\d{2}-\d{2}/g, "")
-                    .replace(/(\s+)?\[completion::.*?\]/g, "");
-
-                // Add due date and completion date
-                return `${result.trim()} ${dueDateEmoji} ${date} ${completionEmoji} ${date}`;
-            } else {
-                // Just add due date
-                return `${result.trim()} ${dueDateEmoji} ${date}`;
-            }
-        }
     };
 
     const checked = item.status !== " ";
@@ -384,6 +423,19 @@ function TaskItem({ item }: { item: STask }) {
             <input class="dataview task-list-item-checkbox" type="checkbox" checked={checked} onClick={onChecked} />
             <Markdown inline={true} content={item.visual ?? item.text} sourcePath={item.path} />
             {item.children.length > 0 && <TaskList items={item.children} />}
+
+            {/* Render the date picker when showDatePicker is true */}
+            {showDatePicker && (
+                <DatePicker
+                    initialDate={DateTime.now().toFormat('yyyy-MM-dd')}
+                    position={datePickerPosition}
+                    onSelect={(date) => {
+                        scheduleTask(context.app.vault, 0, date);
+                        setShowDatePicker(false);
+                    }}
+                    onClose={() => setShowDatePicker(false)}
+                />
+            )}
         </li>
     );
 }
@@ -767,4 +819,75 @@ export async function rewriteTask(vault: Vault, task: STask, desiredStatus: stri
     let newText = filetext.join(hasRN ? "\r\n" : "\n");
     console.log("RIGHT CLICKED: newText", newText);
     await vault.adapter.write(task.path, newText);
+}
+
+// Function to extract dates from task text
+function extractDatesFromTask(text: string): { due?: string; scheduled?: string; completion?: string } {
+    const result: { due?: string; scheduled?: string; completion?: string } = {};
+
+    // Extract dates from inline fields
+    const dueMatch = text.match(/\[due::\s*(\d{4}-\d{2}-\d{2})\]/);
+    if (dueMatch) {
+        result.due = dueMatch[1];
+    }
+
+    const scheduledMatch = text.match(/\[scheduled::\s*(\d{4}-\d{2}-\d{2})\]/);
+    if (scheduledMatch) {
+        result.scheduled = scheduledMatch[1];
+    }
+
+    const completionMatch = text.match(/\[completion::\s*(\d{4}-\d{2}-\d{2})\]/);
+    if (completionMatch) {
+        result.completion = completionMatch[1];
+    }
+
+    // Extract dates from emoji shorthand format
+    const dueDateEmoji = text.match(/📅\s*(\d{4}-\d{2}-\d{2})/);
+    if (dueDateEmoji) {
+        result.due = dueDateEmoji[1];
+    }
+
+    const scheduledDateEmoji = text.match(/⏳\s*(\d{4}-\d{2}-\d{2})/);
+    if (scheduledDateEmoji) {
+        result.scheduled = scheduledDateEmoji[1];
+    }
+
+    const completionDateEmoji = text.match(/✅\s*(\d{4}-\d{2}-\d{2})/);
+    if (completionDateEmoji) {
+        result.completion = completionDateEmoji[1];
+    }
+    return result;
+}
+
+// Function to detect if emoji date format is being used
+function detectEmojiDateFormat(text: string): boolean {
+    const emojiDateRegex = /[\p{Emoji}\p{Emoji_Presentation}][\p{Emoji_Modifier}]?\s*\d{4}-\d{2}-\d{2}/gu;
+    return emojiDateRegex.test(text);
+}
+
+// Function to update dates in emoji format
+function updateEmojiDates(text: string, date: string, isCompleted: boolean = false): string {
+    // Define emoji constants
+    const dueDateEmoji = "📅";
+    const completionEmoji = "✅";
+
+    // Remove existing due dates (both emoji and inline field)
+    let result = text.replace(/(\s+)?📅\s*\d{4}-\d{2}-\d{2}/g, "")
+        .replace(/(\s+)?\[due::.*?\]/g, "");
+
+    // Remove existing scheduled dates (both emoji and inline field)
+    result = result.replace(/(\s+)?⏳\s*\d{4}-\d{2}-\d{2}/g, "")
+        .replace(/(\s+)?\[scheduled::.*?\]/g, "");
+
+    // If completed, also remove and update completion date
+    if (isCompleted) {
+        result = result.replace(/(\s+)?✅\s*\d{4}-\d{2}-\d{2}/g, "")
+            .replace(/(\s+)?\[completion::.*?\]/g, "");
+
+        // Add due date and completion date
+        return `${result.trim()} ${dueDateEmoji} ${date} ${completionEmoji} ${date}`;
+    } else {
+        // Just add due date
+        return `${result.trim()} ${dueDateEmoji} ${date}`;
+    }
 }
