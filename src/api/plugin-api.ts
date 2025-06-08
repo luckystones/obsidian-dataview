@@ -35,7 +35,7 @@ import { Query } from "query/query";
 import { DataviewCalendarRenderer } from "ui/views/calendar-view";
 import { DataviewJSRenderer } from "ui/views/js-view";
 import { markdownList, markdownTable, markdownTaskList } from "ui/export/markdown";
-import { WeeklyTaskApi } from './weekly-task-view';
+import { WeeklyTaskApi } from './weekly-task-search';
 
 /** Asynchronous API calls related to file / system IO. */
 export class DataviewIOApi {

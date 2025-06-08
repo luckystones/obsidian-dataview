@@ -15,7 +15,7 @@ import { DataArray } from "./data-array";
 import { SListItem } from "data-model/serialized/markdown";
 import { EXPRESSION } from "expression/parse";
 import { Result } from "api/result";
-import { WeeklyTaskApi, WeeklyTaskOptions } from './weekly-task-view';
+import { WeeklyTaskApi, WeeklyTaskOptions } from './weekly-task-search';
 
 /** Asynchronous API calls related to file / system IO. */
 export class DataviewInlineIOApi {

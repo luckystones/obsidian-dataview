@@ -1,6 +1,6 @@
 import { DataArray } from 'api/data-array';
 import { DataviewApi } from 'api/plugin-api';
-import { WeeklyTaskApi } from 'api/weekly-task-view';
+import { WeeklyTaskApi } from 'api/weekly-task-search';
 import { STask } from 'data-model/serialized/markdown';
 import { DEFAULT_QUERY_SETTINGS } from 'settings';
 
