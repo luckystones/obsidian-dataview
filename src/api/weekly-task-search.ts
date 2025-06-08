@@ -4,6 +4,7 @@ import { DataArray } from './data-array';
 import { DataviewApi } from './plugin-api';
 import { DateTime } from 'luxon';
 import { WeeklyView } from '../ui/views/weekly-view';
+import { WeekUtils } from './WeekUtils';
 
 export type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
 
@@ -61,10 +62,35 @@ export class WeeklyTaskApi {
      * @param options The options for getting and rendering weekly tasks
      * @returns The container element with the rendered tasks
      */
+    /**
+     * Gets the filename from options or determines it from the active file
+     * @param options Options containing year, week, and optional filename
+     * @returns The filename in YYYY-WW format
+     */
+    private getFilenameFromOptions(options: WeeklyTaskOptions): string {
+        const { year, week, filename: optionsFilename } = options;
+
+        // If filename is provided in options, use it
+        if (optionsFilename) {
+            return optionsFilename;
+        }
+
+        // If year and week are provided, use them to create the filename
+        if (year && week) {
+            return `${year}-W${week}`;
+        }
+
+        // Otherwise try to get active file name
+        const activeFileName = this.dv.app.workspace.getActiveFile()?.name;
+        if (!activeFileName) {
+            throw new Error('Could not determine current file and no year/week provided');
+        }
+
+        return activeFileName;
+    }
+
     public async getAndRenderWeeklyTasks(options: WeeklyTaskOptions): Promise<HTMLElement> {
         const {
-            year,
-            week,
             searchPath = '"/game/objectives"',
             component,
             container,
@@ -75,21 +101,10 @@ export class WeeklyTaskApi {
             throw new Error('Component and container are required for rendering tasks');
         }
 
-        let filename: string;
+        // Get filename using the extracted method
+        const filename = this.getFilenameFromOptions(options);
 
-        // If year and week are provided, use them to create the filename
-        if (year && week) {
-            filename = `${year}-W${week}`;
-        } else {
-            // Otherwise try to get active file name
-            const activeFileName = this.dv.app.workspace.getActiveFile()?.name;
-            if (!activeFileName) {
-                throw new Error('Could not determine current file and no year/week provided');
-            }
-            filename = activeFileName;
-        }
-
-        const result = await this.searchForTasksWithTag(searchPath, filename);
+        const result = this.searchForTasksWithTag(searchPath, filename);
         const tasks = this.processTaskResults(result, filename);
 
         // If trimTaskText is true, update each task's text to show only the description
@@ -109,14 +124,10 @@ export class WeeklyTaskApi {
             });
         }
 
-        // Render them using the WeeklyView class
-        const taskContainer = this.weeklyView.renderWeeklyTasksAsTable(tasks, filename, component, container);
+        // Render using the WeeklyView's dashboard that includes tasks, time widget, and reflections
+        const dashboardContainer = await this.weeklyView.renderWeeklyDashboard(tasks, filename, component, container);
 
-        const taskAndTimeContainer = this.weeklyView.renderWeeklyTime(filename, taskContainer, component);
-        // Ensure styles are applied
-        this.weeklyView.reloadStyles();
-
-        return taskAndTimeContainer;
+        return dashboardContainer;
     }
 
     /**
@@ -209,32 +220,6 @@ export class WeeklyTaskApi {
         return result;
     }
 
-    /**
-     * Finds the first Monday of the specified week in the year
-     */
-    private findFirstMonday(year: number, week: number): Date {
-        try {
-            // Validate inputs
-
-            const janFirst = new Date(year, 0, 1);
-
-            // Find the first Monday of the year
-            // getDay() returns 0 for Sunday, 1 for Monday, etc.
-            const dayOfWeek = janFirst.getDay();
-            const daysToFirstMonday = dayOfWeek === 1 ? 0 : (dayOfWeek === 0 ? 1 : 8 - dayOfWeek);
-
-            const firstMondayOfYear = new Date(year, 0, 1 + daysToFirstMonday);
-
-            // Calculate the target Monday based on the week number
-            const targetMonday = new Date(firstMondayOfYear);
-            targetMonday.setDate(firstMondayOfYear.getDate() + (week - 1) * 7);
-
-            return targetMonday;
-        } catch (e) {
-            console.error('Error in findFirstMonday:', e);
-            throw e;
-        }
-    }
 
     private parseTask(taskText: string): ParsedTask {
         // Default values
@@ -313,17 +298,25 @@ export class WeeklyTaskApi {
      * @param filename The current filename (in format YYYY-WW)
      * @returns An array of tasks matching the criteria
      */
+    /**
+     * Parses year and week from a filename
+     * @param filename The filename in YYYY-WW format
+     * @returns An object containing year and week numbers, or undefined if parsing fails
+     */
+    private parseYearAndWeekFromFilename(filename: string): { year: number, week: number } | undefined {
+        return WeekUtils.parseYearAndWeekFromFilename(filename);
+    }
+
     public searchForTasksWithTag(searchpath: string, filename: string): DataArray<STask> {
         try {
             // Parse year and week from filename
-            const [year, weekStr] = filename.split('-W');
-            const week = parseInt(weekStr, 10);
+            const yearWeek = this.parseYearAndWeekFromFilename(filename);
 
-            if (isNaN(week) || !year) {
-                console.error('Invalid filename format:', filename);
-                console.error('Expected format: YYYY-WW');
+            if (!yearWeek) {
                 return this.dv.array([]) as DataArray<STask>;
             }
+
+            const { year, week } = yearWeek;
 
 
             // Get pages from the given search path
@@ -353,7 +346,7 @@ export class WeeklyTaskApi {
             const taskSearch = allTasks.where((task: STask): boolean => {
                 try {
                     // Get the date range for the specified week
-                    const { firstMonday, lastSunday } = this.getWeekDateRange(parseInt(year), week);
+                    const { firstMonday, lastSunday } = WeekUtils.getWeekDateRange(year, week);
 
                     const hasCompletionMatch = task.completed &&
                         task.completion &&
@@ -386,46 +379,6 @@ export class WeeklyTaskApi {
     }
 
     /**
-     * Calculates the date range (first Monday and last Sunday) for a specific week of the year
-     * @param year The year 
-     * @param week The week number
-     * @returns An object containing firstMonday and lastSunday dates
-     */
-    private getWeekDateRange(year: number, week: number): { firstMonday: Date, lastSunday: Date } {
-        if (!year || !week) {
-            console.error('Invalid year or week parameters:', year, week);
-            return {
-                firstMonday: new Date(NaN),
-                lastSunday: new Date(NaN)
-            };
-        }
-
-        try {
-            const firstMonday = this.findFirstMonday(year, week);
-
-            if (isNaN(firstMonday.getTime())) {
-                console.error('Invalid first Monday for year/week:', year, week);
-                return {
-                    firstMonday: new Date(NaN),
-                    lastSunday: new Date(NaN)
-                };
-            }
-
-            const lastSunday = new Date(firstMonday);
-            lastSunday.setDate(firstMonday.getDate() + 6);
-            lastSunday.setHours(23, 59, 59, 999);
-
-            return { firstMonday, lastSunday };
-        } catch (e) {
-            console.error('Error calculating week range:', e);
-            return {
-                firstMonday: new Date(NaN),
-                lastSunday: new Date(NaN)
-            };
-        }
-    }
-
-    /**
      * Checks if a date falls within the specified week of the year
      * @param toBeCheckedDate The date in milliseconds to check
      * @param firstMonday The first day (Monday) of the week
@@ -433,30 +386,6 @@ export class WeeklyTaskApi {
      * @returns True if the date is in the specified week, false otherwise
      */
     private isDateInWeek(toBeCheckedDate: DateTime | number, firstMonday: Date, lastSunday: Date): boolean {
-        try {
-            // Convert toBeCheckedDate to a Date object, handling Luxon DateTime correctly
-            let dueDate: Date;
-            if (typeof toBeCheckedDate === 'object' && 'toJSDate' in toBeCheckedDate) {
-                // This is a Luxon DateTime object
-                dueDate = toBeCheckedDate.toJSDate();
-            } else {
-                dueDate = new Date(toBeCheckedDate as number);
-            }
-
-            if (isNaN(dueDate.getTime())) {
-                console.error('Invalid date:', toBeCheckedDate);
-                return false;
-            }
-
-            if (isNaN(firstMonday.getTime()) || isNaN(lastSunday.getTime())) {
-                console.error('Invalid week range:', firstMonday, lastSunday);
-                return false;
-            }
-
-            return dueDate >= firstMonday && dueDate <= lastSunday;
-        } catch (e) {
-            console.error('Error in isDateInWeek:', e);
-            return false;
-        }
+        return WeekUtils.isDateInWeek(toBeCheckedDate, firstMonday, lastSunday);
     }
 } 

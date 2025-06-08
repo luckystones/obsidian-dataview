@@ -1,6 +1,7 @@
 import { STask } from 'data-model/serialized/markdown';
 import { Component } from 'obsidian';
 import { DataviewApi } from '../../api/plugin-api';
+import { WeeklyTagGroup } from '../../api/weekly-tag-search';
 import { DayOfWeek, WeeklyTaskGroup } from '../../api/weekly-task-search';
 
 interface TaskStatistic {
@@ -53,6 +54,318 @@ export class WeeklyView {
         this.renderStats(tasks, filename, weeklyContainer);
 
         return weeklyContainer;
+    }
+
+    /**
+     * Renders weekly reflections from files tagged with "highlights"
+     * @param filename The filename in YYYY-WW format 
+     * @param component The component to use for rendering
+     * @param container The container to render the reflections in
+     * @returns The container with the rendered reflections
+     */
+    public async renderReflections(
+        filename: string,
+        component: Component,
+        container: HTMLElement
+    ): Promise<HTMLElement> {
+        // Create container for the reflections view
+        const reflectionsContainer = container.createEl('div');
+        reflectionsContainer.setAttribute('style', `
+            margin: 2em 0;
+            padding: 16px;
+            background: rgba(22, 33, 51, 0.03);
+            border-radius: 8px;
+            border: 1px solid rgba(30, 41, 59, 0.1);
+        `);
+
+        // Add header
+        const header = reflectionsContainer.createEl('h2');
+        header.textContent = 'Weekly Reflections';
+        header.setAttribute('style', `
+            margin: 0 0 16px 0;
+            font-size: 1.4em;
+            color: #3b82f6;
+            font-weight: 600;
+            text-align: center;
+            border-bottom: 2px solid rgba(59, 130, 246, 0.2);
+            padding-bottom: 8px;
+        `);
+
+        try {
+            // Parse year and week from filename
+            const [yearStr, weekStr] = filename.split('-W');
+            const year = parseInt(yearStr);
+            const week = parseInt(weekStr);
+
+            if (isNaN(year) || isNaN(week)) {
+                const errorMessage = reflectionsContainer.createEl('div');
+                errorMessage.textContent = 'Invalid filename format. Expected YYYY-WW.';
+                errorMessage.setAttribute('style', 'color: #FF6B6B; text-align: center;');
+                return reflectionsContainer;
+            }
+
+            // Search for files with the "highlights" tag
+            const highlightFiles = await this.dv.weeklyTag.searchFilesWithTag({
+                year: year,
+                week: week,
+                tag: "highlight",
+                searchPath: "daily",
+                component: component
+            });
+
+            // Check if we found any files
+            const totalFiles = Object.values(highlightFiles).flat().length;
+
+            if (totalFiles === 0) {
+                const noReflections = reflectionsContainer.createEl('div');
+                noReflections.textContent = 'No reflections found for this week.';
+                noReflections.setAttribute('style', `
+                    text-align: center;
+                    color: #64748b;
+                    font-style: italic;
+                    padding: 16px;
+                `);
+                return reflectionsContainer;
+            }
+
+            // Render reflections by day
+            await this.renderReflectionsByDay(highlightFiles, reflectionsContainer, component);
+
+            return reflectionsContainer;
+        } catch (e) {
+            console.error('Error rendering reflections:', e);
+            const errorMessage = reflectionsContainer.createEl('div');
+            errorMessage.textContent = `Error loading reflections: ${e.message}`;
+            errorMessage.setAttribute('style', 'color: #FF6B6B; text-align: center;');
+            return reflectionsContainer;
+        }
+    }
+
+    /**
+     * Renders reflections grouped by day of week
+     * @param files Files containing reflections grouped by day
+     * @param container Container to render the reflections in
+     * @param component Component to use for rendering
+     */
+    private async renderReflectionsByDay(
+        files: WeeklyTagGroup,
+        container: HTMLElement,
+        component: Component
+    ): Promise<void> {
+        const days: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        const colors = {
+            Monday: '#3b82f6',    // Blue
+            Tuesday: '#8b5cf6',   // Purple
+            Wednesday: '#ec4899', // Pink
+            Thursday: '#f97316',  // Orange
+            Friday: '#84cc16',    // Green
+            Saturday: '#14b8a6',  // Teal
+            Sunday: '#f43f5e'     // Red
+        };
+
+        // Create reflection cards container with CSS grid
+        const cardsContainer = container.createEl('div');
+        cardsContainer.setAttribute('style', `
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        `);
+
+        // Process each day that has reflections
+        for (const day of days) {
+            const dayFiles = files[day];
+            if (dayFiles.length === 0) continue;
+
+            // Create card for this day
+            const dayCard = cardsContainer.createEl('div');
+            dayCard.setAttribute('style', `
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                min-height: 200px;
+                border-top: 4px solid ${colors[day]};
+            `);
+
+            // Add day header
+            const dayHeader = dayCard.createEl('div');
+            dayHeader.setAttribute('style', `
+                padding: 12px 16px;
+                font-weight: 600;
+                font-size: 1.1em;
+                color: ${colors[day]};
+                background: rgba(${this.hexToRgb(colors[day])}, 0.05);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            `);
+
+            const dayTitle = dayHeader.createEl('span');
+            dayTitle.textContent = day;
+
+            const fileCount = dayHeader.createEl('span');
+            fileCount.textContent = `${dayFiles.length} highlight${dayFiles.length > 1 ? 's' : ''}`;
+            fileCount.setAttribute('style', 'font-size: 0.8em; opacity: 0.7;');
+
+            // Add content container
+            const contentContainer = dayCard.createEl('div');
+            contentContainer.setAttribute('style', `
+                padding: 16px;
+                flex-grow: 1;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                overflow-y: auto;
+                max-height: 300px;
+            `);
+
+            // Process each file for this day
+            for (const file of dayFiles) {
+                // Create file container
+                const fileContainer = contentContainer.createEl('div');
+                fileContainer.setAttribute('style', `
+                    border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
+                    padding-bottom: 12px;
+                    margin-bottom: 12px;
+                    position: relative;
+                `);
+
+                // Add file title with link
+                const fileTitle = fileContainer.createEl('div');
+                fileTitle.setAttribute('style', `
+                    font-weight: 500;
+                    margin-bottom: 8px;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                `);
+
+                // Add calendar icon
+                const calendarIcon = fileTitle.createEl('span');
+                calendarIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`;
+                calendarIcon.setAttribute('style', `color: ${colors[day]}; opacity: 0.7;`);
+
+                const fileLink = fileTitle.createEl('a');
+                fileLink.textContent = file.basename;
+                fileLink.setAttribute('href', file.path);
+                fileLink.setAttribute('style', `
+                    color: #334155;
+                    text-decoration: none;
+                `);
+
+                // Add click handler
+                fileLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.dv.app.workspace.openLinkText(file.path, '', false);
+                });
+
+                // If file has tag values, display them (these are the highlight categories)
+                if (file.tagValues && file.tagValues.length > 0) {
+                    const tagValuesContainer = fileContainer.createEl('div');
+                    tagValuesContainer.setAttribute('style', `
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 4px;
+                        margin-bottom: 8px;
+                    `);
+
+                    file.tagValues.forEach(value => {
+                        const tagValue = tagValuesContainer.createEl('span');
+                        tagValue.textContent = value;
+                        tagValue.setAttribute('style', `
+                            background-color: rgba(${this.hexToRgb(colors[day])}, 0.1);
+                            color: ${colors[day]};
+                            padding: 2px 8px;
+                            border-radius: 4px;
+                            font-size: 0.7em;
+                            font-weight: 500;
+                            text-transform: capitalize;
+                        `);
+                    });
+                }
+
+                // Try to extract highlights from the file content
+                try {
+                    const fileContent = await this.dv.app.vault.cachedRead(file);
+                    const highlights = this.dv.weeklyTag.extractHighlightsFromContent(fileContent);
+
+                    if (highlights.length > 0) {
+                        // Create highlights list
+                        const highlightsList = fileContainer.createEl('ul');
+                        highlightsList.setAttribute('style', `
+                            margin: 0;
+                            padding-left: 16px;
+                            list-style-type: none;
+                        `);
+
+                        highlights.forEach(highlight => {
+                            const highlightItem = highlightsList.createEl('li');
+                            highlightItem.setAttribute('style', `
+                                position: relative;
+                                padding-left: 12px;
+                                margin-bottom: 6px;
+                                line-height: 1.4;
+                                color: #334155;
+                                font-size: 0.9em;
+                            `);
+
+                            // Add quote marker
+                            highlightItem.createEl('span', {
+                                text: '❝',
+                                attr: {
+                                    style: `
+                                        position: absolute;
+                                        left: -5px;
+                                        top: -2px;
+                                        color: ${colors[day]};
+                                        font-size: 1.2em;
+                                    `
+                                }
+                            });
+
+                            highlightItem.createEl('span', { text: highlight });
+                        });
+                    } else {
+                        // No highlights found, add a note
+                        const noHighlights = fileContainer.createEl('div');
+                        noHighlights.textContent = 'No specific highlights found in this file.';
+                        noHighlights.setAttribute('style', `
+                            font-style: italic;
+                            color: #94a3b8;
+                            font-size: 0.9em;
+                        `);
+                    }
+                } catch (e) {
+                    console.error(`Error reading file ${file.path}:`, e);
+                    const errorMessage = fileContainer.createEl('div');
+                    errorMessage.textContent = 'Error reading highlights.';
+                    errorMessage.setAttribute('style', 'color: #FF6B6B; font-size: 0.9em;');
+                }
+            }
+        }
+    }
+
+
+
+    /**
+     * Converts hex color to RGB values string (e.g. "59, 130, 246")
+     * @param hex Hex color string (e.g. "#3b82f6")
+     * @returns RGB values as string
+     */
+    private hexToRgb(hex: string): string {
+        // Remove the hash
+        hex = hex.replace('#', '');
+
+        // Parse the hex values
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+
+        return `${r}, ${g}, ${b}`;
     }
 
     /**
@@ -380,7 +693,6 @@ export class WeeklyView {
             startAngle = endAngle;
         });
     }
-
 
     /**
      * Calculates and displays age and time indicators based on the given filename and a static birth date
@@ -813,5 +1125,39 @@ export class WeeklyView {
                 });
             }, 10);
         }
+    }
+
+    /**
+     * Renders a complete weekly dashboard with tasks and reflections
+     * @param tasks Weekly tasks to display
+     * @param filename The filename in YYYY-WW format
+     * @param component The component to use for rendering
+     * @param container The container to render in
+     * @returns The container with the rendered dashboard
+     */
+    public async renderWeeklyDashboard(
+        tasks: WeeklyTaskGroup,
+        filename: string,
+        component: Component,
+        container: HTMLElement
+    ): Promise<HTMLElement> {
+        // Create main container
+        const dashboardContainer = container.createEl('div');
+        dashboardContainer.setAttribute('style', 'margin: 1em 0;');
+
+        // Render tasks section
+        const tasksContainer = dashboardContainer.createEl('div');
+        await this.renderWeeklyTasksAsTable(tasks, filename, component, tasksContainer);
+
+        // Render time widget
+        await this.renderWeeklyTime(filename, dashboardContainer, component);
+
+        // Render reflections section
+        await this.renderReflections(filename, component, dashboardContainer);
+
+        // Ensure styles are applied
+        this.reloadStyles();
+
+        return dashboardContainer;
     }
 }

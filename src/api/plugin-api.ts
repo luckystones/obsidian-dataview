@@ -36,6 +36,7 @@ import { DataviewCalendarRenderer } from "ui/views/calendar-view";
 import { DataviewJSRenderer } from "ui/views/js-view";
 import { markdownList, markdownTable, markdownTaskList } from "ui/export/markdown";
 import { WeeklyTaskApi } from './weekly-task-search';
+import { WeeklyTagApi } from './weekly-tag-search';
 
 /** Asynchronous API calls related to file / system IO. */
 export class DataviewIOApi {
@@ -90,6 +91,8 @@ export class DataviewApi {
     public luxon = Luxon;
     /** Weekly task API for managing and rendering weekly task views */
     public weekly: WeeklyTaskApi;
+    /** Weekly tag API for searching files with tags by week */
+    public weeklyTag: WeeklyTagApi;
 
     public constructor(
         public app: App,
@@ -101,6 +104,7 @@ export class DataviewApi {
         this.func = Functions.bindAll(DEFAULT_FUNCTIONS, this.evaluationContext);
         this.io = new DataviewIOApi(this);
         this.weekly = new WeeklyTaskApi(this);
+        this.weeklyTag = new WeeklyTagApi(this);
     }
 
     /** Utilities to check the current Dataview version and compare it to SemVer version ranges. */
@@ -594,6 +598,24 @@ export class DataviewApi {
         container: HTMLElement;
     }): Promise<HTMLElement> {
         return this.weekly.getAndRenderWeeklyTasks(options);
+    }
+
+    /**
+     * Search for files with a specific tag in the "daily" folder for a given week and render the results
+     * @param options The options for searching and rendering
+     * @returns The container element with the rendered results
+     */
+    public async weeklyTagSearch(options: {
+        year: number;
+        week: number;
+        tag: string;
+        searchPath?: string;
+        filename?: string;
+        component: Component;
+        container: HTMLElement;
+    }): Promise<HTMLElement> {
+        const files = await this.weeklyTag.searchFilesWithTag(options);
+        return this.weeklyTag.renderWeeklyTagResults(files, options.container);
     }
 }
 
