@@ -420,6 +420,24 @@ export class DataviewInlineApi {
             container: this.container
         });
     }
+
+    /**
+     * Render a monthly dashboard view for a specific year and month
+     * @param options The options for rendering the monthly dashboard
+     * @returns The container element with the rendered dashboard
+     */
+    public async monthlyDashboard(options: {
+        filename: string;
+        component: Component;
+        container: HTMLElement;
+    }): Promise<HTMLElement> {
+        // Use the plugin API's monthlyDashboard method with our component and container
+        return this.api.monthlyDashboard({
+            ...options,
+            component: this.component,
+            container: this.container
+        });
+    }
 }
 
 /**

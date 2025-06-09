@@ -37,6 +37,8 @@ import { DataviewJSRenderer } from "ui/views/js-view";
 import { markdownList, markdownTable, markdownTaskList } from "ui/export/markdown";
 import { WeeklyTaskApi } from './weekly-task-search';
 import { WeeklyTagApi } from './weekly-tag-search';
+import { InlineFieldSearch } from './inline-field-search';
+import { MonthlyView } from "ui/views/monthly-view";
 
 /** Asynchronous API calls related to file / system IO. */
 export class DataviewIOApi {
@@ -93,6 +95,10 @@ export class DataviewApi {
     public weekly: WeeklyTaskApi;
     /** Weekly tag API for searching files with tags by week */
     public weeklyTag: WeeklyTagApi;
+    /** Monthly tag API for searching files with tags by month */
+    public monthlyView: MonthlyView;
+    /** General field search API for finding files with specific fields */
+    public fieldSearch: InlineFieldSearch;
 
     public constructor(
         public app: App,
@@ -105,6 +111,8 @@ export class DataviewApi {
         this.io = new DataviewIOApi(this);
         this.weekly = new WeeklyTaskApi(this);
         this.weeklyTag = new WeeklyTagApi(this);
+        this.monthlyView = new MonthlyView(this);
+        this.fieldSearch = new InlineFieldSearch(app);
     }
 
     /** Utilities to check the current Dataview version and compare it to SemVer version ranges. */
@@ -598,6 +606,31 @@ export class DataviewApi {
         container: HTMLElement;
     }): Promise<HTMLElement> {
         return this.weekly.getAndRenderWeeklyTasks(options);
+    }
+
+    /**
+     * Render a monthly dashboard view for a specific year and month
+     * @param options The options for rendering the monthly dashboard
+     * @returns The container element with the rendered dashboard
+     */
+    public async monthlyDashboard(options: {
+        filename: string;
+        component: Component;
+        container: HTMLElement;
+    }): Promise<HTMLElement> {
+
+        //extract year month from filename
+        const filename = options.filename || this.app.workspace.getActiveFile()?.name?.replace(".md", "");
+
+        if (!filename) {
+            throw new Error('No filename provided');
+        }
+        // Render the monthly dashboard
+        return this.monthlyView.renderMonthlyDashboard(
+            filename,
+            options.component,
+            options.container
+        );
     }
 
     /**

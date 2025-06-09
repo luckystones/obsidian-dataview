@@ -1,7 +1,7 @@
 import { STask } from 'data-model/serialized/markdown';
 import { Component } from 'obsidian';
 import { DataviewApi } from '../../api/plugin-api';
-import { TaggedFile, WeeklyTagGroup } from '../../api/weekly-tag-search';
+import { TaggedFile } from '../../api/inline-field-search';
 import { DayOfWeek, WeeklyTaskGroup } from '../../api/weekly-task-search';
 
 interface TaskStatistic {
@@ -105,7 +105,7 @@ export class WeeklyView {
 
             // Search for files with multiple fields: highlight, feeling, tefekkur, sohbet, and words
             const fields = ["highlight", "feeling", "tefekkur", "sohbet", "words"];
-            const highlightFiles = await this.dv.weeklyTag.searchFilesWithTag({
+            const highlightFiles = await this.dv.fieldSearch.searchFilesWithField({
                 year: year,
                 week: week,
                 tag: fields,
@@ -148,7 +148,7 @@ export class WeeklyView {
      * @param component Component to use for rendering
      */
     private async renderReflectionsByFieldType(
-        files: WeeklyTagGroup,
+        files: Record<string, TaggedFile[]>,
         container: HTMLElement,
         component: Component
     ): Promise<void> {
@@ -169,7 +169,7 @@ export class WeeklyView {
         const days: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         for (const day of days) {
             const dayFiles = files[day];
-            if (dayFiles.length === 0) continue;
+            if (!dayFiles || dayFiles.length === 0) continue;
 
             // Process each file for this day
             for (const file of dayFiles) {
@@ -331,8 +331,16 @@ export class WeeklyView {
 
                 // Try to extract highlights from the file content
                 try {
-                    const fileContent = await this.dv.app.vault.read(file);
-                    const highlights = this.dv.weeklyTag.extractHighlightsFromContent(fileContent);
+                    // Get the TFile from the path and read it
+                    const tfile = this.dv.app.vault.getAbstractFileByPath(file.path);
+                    if (!tfile) {
+                        console.error(`File not found: ${file.path}`);
+                        continue;
+                    }
+
+                    // Read the file content
+                    const fileContent = await this.dv.app.vault.cachedRead(tfile as any);
+                    const highlights = this.dv.fieldSearch.extractHighlightsFromContent(fileContent);
 
                     if (highlights.length > 0) {
                         // Create highlights list with more compact styling
