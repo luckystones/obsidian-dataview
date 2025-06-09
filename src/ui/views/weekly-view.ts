@@ -1,7 +1,7 @@
 import { STask } from 'data-model/serialized/markdown';
 import { Component } from 'obsidian';
 import { DataviewApi } from '../../api/plugin-api';
-import { WeeklyTagGroup } from '../../api/weekly-tag-search';
+import { TaggedFile, WeeklyTagGroup } from '../../api/weekly-tag-search';
 import { DayOfWeek, WeeklyTaskGroup } from '../../api/weekly-task-search';
 
 interface TaskStatistic {
@@ -51,7 +51,6 @@ export class WeeklyView {
         const weekendDays: DayOfWeek[] = ['Saturday', 'Sunday'];
         this.renderWeekendTable(tasks, dates, weekendDays, weeklyContainer, component, filename);
         // Create statistics section
-        this.renderStats(tasks, filename, weeklyContainer);
 
         return weeklyContainer;
     }
@@ -80,7 +79,7 @@ export class WeeklyView {
 
         // Add header
         const header = reflectionsContainer.createEl('h2');
-        header.textContent = 'Weekly Reflections';
+        header.textContent = 'Weekly Notes & Reflections';
         header.setAttribute('style', `
             margin: 0 0 16px 0;
             font-size: 1.4em;
@@ -104,11 +103,12 @@ export class WeeklyView {
                 return reflectionsContainer;
             }
 
-            // Search for files with the "highlights" tag
+            // Search for files with multiple fields: highlight, feeling, tefekkur, sohbet, and words
+            const fields = ["highlight", "feeling", "tefekkur", "sohbet", "words"];
             const highlightFiles = await this.dv.weeklyTag.searchFilesWithTag({
                 year: year,
                 week: week,
-                tag: "highlight",
+                tag: fields,
                 searchPath: "daily",
                 component: component
             });
@@ -118,7 +118,7 @@ export class WeeklyView {
 
             if (totalFiles === 0) {
                 const noReflections = reflectionsContainer.createEl('div');
-                noReflections.textContent = 'No reflections found for this week.';
+                noReflections.textContent = 'No notes or reflections found for this week.';
                 noReflections.setAttribute('style', `
                     text-align: center;
                     color: #64748b;
@@ -128,8 +128,8 @@ export class WeeklyView {
                 return reflectionsContainer;
             }
 
-            // Render reflections by day
-            await this.renderReflectionsByDay(highlightFiles, reflectionsContainer, component);
+            // Render reflections by field type instead of by day
+            await this.renderReflectionsByFieldType(highlightFiles, reflectionsContainer, component);
 
             return reflectionsContainer;
         } catch (e) {
@@ -142,119 +142,160 @@ export class WeeklyView {
     }
 
     /**
-     * Renders reflections grouped by day of week
+     * Renders reflections grouped by field type instead of by day
      * @param files Files containing reflections grouped by day
      * @param container Container to render the reflections in
      * @param component Component to use for rendering
      */
-    private async renderReflectionsByDay(
+    private async renderReflectionsByFieldType(
         files: WeeklyTagGroup,
         container: HTMLElement,
         component: Component
     ): Promise<void> {
-        const days: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        const colors = {
-            Monday: '#3b82f6',    // Blue
-            Tuesday: '#8b5cf6',   // Purple
-            Wednesday: '#ec4899', // Pink
-            Thursday: '#f97316',  // Orange
-            Friday: '#84cc16',    // Green
-            Saturday: '#14b8a6',  // Teal
-            Sunday: '#f43f5e'     // Red
+        // Field-specific colors
+        const fieldColors = {
+            highlight: '#3b82f6',  // Blue
+            feeling: '#ec4899',    // Pink
+            tefekkur: '#f97316',   // Orange
+            sohbet: '#84cc16',     // Green
+            words: '#8b5cf6',      // Purple
+            default: '#64748b'     // Gray
         };
 
-        // Create reflection cards container with CSS grid
-        const cardsContainer = container.createEl('div');
-        cardsContainer.setAttribute('style', `
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 16px;
-            margin-top: 16px;
-        `);
+        // First, collect all files and organize them by field type
+        const filesByFieldType: Record<string, TaggedFile[]> = {};
 
-        // Process each day that has reflections
+        // Process each day
+        const days: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         for (const day of days) {
             const dayFiles = files[day];
             if (dayFiles.length === 0) continue;
 
-            // Create card for this day
-            const dayCard = cardsContainer.createEl('div');
-            dayCard.setAttribute('style', `
+            // Process each file for this day
+            for (const file of dayFiles) {
+                const fieldType = file.source || 'note';
+
+                // Initialize array for this field type if not exists
+                if (!filesByFieldType[fieldType]) {
+                    filesByFieldType[fieldType] = [];
+                }
+
+                // Add file to the appropriate field type group
+                filesByFieldType[fieldType].push(file);
+            }
+        }
+
+        // Create field type cards container with CSS grid - more compact
+        const cardsContainer = container.createEl('div');
+        cardsContainer.setAttribute('style', `
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        `);
+
+        // Process each field type
+        for (const [fieldType, fieldFiles] of Object.entries(filesByFieldType)) {
+            if (fieldFiles.length === 0) continue;
+
+            // Get color for this field type
+            const color = fieldColors[fieldType as keyof typeof fieldColors] || fieldColors.default;
+
+            // Create card for this field type with more compact styling
+            const fieldCard = cardsContainer.createEl('div');
+            fieldCard.setAttribute('style', `
                 background: white;
-                border-radius: 8px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+                border-radius: 6px;
+                box-shadow: 0 3px 5px rgba(0, 0, 0, 0.05);
                 overflow: hidden;
                 display: flex;
                 flex-direction: column;
                 height: 100%;
-                min-height: 200px;
-                border-top: 4px solid ${colors[day]};
+                min-height: 180px;
+                border-top: 3px solid ${color};
             `);
 
-            // Add day header
-            const dayHeader = dayCard.createEl('div');
-            dayHeader.setAttribute('style', `
-                padding: 12px 16px;
+            // Add field type header with more compact styling
+            const fieldHeader = fieldCard.createEl('div');
+            fieldHeader.setAttribute('style', `
+                padding: 8px 12px;
                 font-weight: 600;
-                font-size: 1.1em;
-                color: ${colors[day]};
-                background: rgba(${this.hexToRgb(colors[day])}, 0.05);
+                font-size: 1em;
+                color: ${color};
+                background: rgba(${this.hexToRgb(color)}, 0.05);
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
             `);
 
-            const dayTitle = dayHeader.createEl('span');
-            dayTitle.textContent = day;
+            const fieldTitle = fieldHeader.createEl('span');
+            fieldTitle.textContent = fieldType.charAt(0).toUpperCase() + fieldType.slice(1);
 
-            const fileCount = dayHeader.createEl('span');
-            fileCount.textContent = `${dayFiles.length} highlight${dayFiles.length > 1 ? 's' : ''}`;
-            fileCount.setAttribute('style', 'font-size: 0.8em; opacity: 0.7;');
+            const fileCount = fieldHeader.createEl('span');
+            fileCount.textContent = `${fieldFiles.length} item${fieldFiles.length > 1 ? 's' : ''}`;
+            fileCount.setAttribute('style', 'font-size: 0.75em; opacity: 0.7;');
 
-            // Add content container
-            const contentContainer = dayCard.createEl('div');
+            // Add content container with more compact styling
+            const contentContainer = fieldCard.createEl('div');
             contentContainer.setAttribute('style', `
-                padding: 16px;
+                padding: 10px;
                 flex-grow: 1;
                 display: flex;
                 flex-direction: column;
-                gap: 12px;
+                gap: 8px;
                 overflow-y: auto;
-                max-height: 300px;
+                max-height: 250px;
             `);
 
-            // Process each file for this day
-            for (const file of dayFiles) {
-                // Create file container
+            // Sort files by date
+            fieldFiles.sort((a, b) => {
+                const dateA = this.getFileDateFromFilename(a.basename);
+                const dateB = this.getFileDateFromFilename(b.basename);
+                if (dateA && dateB) {
+                    return dateA.getTime() - dateB.getTime();
+                }
+                return 0;
+            });
+
+            // Process each file for this field type
+            for (const file of fieldFiles) {
+                // Create file container - make it more compact
                 const fileContainer = contentContainer.createEl('div');
                 fileContainer.setAttribute('style', `
                     border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
-                    padding-bottom: 12px;
-                    margin-bottom: 12px;
+                    padding-bottom: 8px;
+                    margin-bottom: 8px;
                     position: relative;
                 `);
 
-                // Add file title with link
+                // Add file title with link - make it more compact
                 const fileTitle = fileContainer.createEl('div');
                 fileTitle.setAttribute('style', `
                     font-weight: 500;
-                    margin-bottom: 8px;
+                    margin-bottom: 4px;
                     display: flex;
                     align-items: center;
-                    gap: 8px;
+                    gap: 4px;
                 `);
 
-                // Add calendar icon
+                // Add calendar icon and make it smaller
                 const calendarIcon = fileTitle.createEl('span');
-                calendarIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`;
-                calendarIcon.setAttribute('style', `color: ${colors[day]}; opacity: 0.7;`);
+                calendarIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`;
+                calendarIcon.setAttribute('style', `color: ${color}; opacity: 0.7;`);
+
+                // Extract and display date (day of week + date)
+                const fileDate = this.getFileDateFromFilename(file.basename);
+                // Use short day name for more compact display
+                const shortDayName = fileDate ? this.getShortDayName(fileDate.getDay()) : '';
+                const dateText = fileDate ? `${shortDayName} (${fileDate.getDate()})` : file.basename;
 
                 const fileLink = fileTitle.createEl('a');
-                fileLink.textContent = file.basename;
+                fileLink.textContent = dateText;
                 fileLink.setAttribute('href', file.path);
                 fileLink.setAttribute('style', `
                     color: #334155;
                     text-decoration: none;
+                    font-size: 0.9em;
                 `);
 
                 // Add click handler
@@ -263,25 +304,25 @@ export class WeeklyView {
                     this.dv.app.workspace.openLinkText(file.path, '', false);
                 });
 
-                // If file has tag values, display them (these are the highlight categories)
+                // If file has tag values, display them in a more compact way
                 if (file.tagValues && file.tagValues.length > 0) {
                     const tagValuesContainer = fileContainer.createEl('div');
                     tagValuesContainer.setAttribute('style', `
                         display: flex;
                         flex-wrap: wrap;
-                        gap: 4px;
-                        margin-bottom: 8px;
+                        gap: 3px;
+                        margin-bottom: 4px;
                     `);
 
-                    file.tagValues.forEach(value => {
+                    file.tagValues.forEach((value: string) => {
                         const tagValue = tagValuesContainer.createEl('span');
                         tagValue.textContent = value;
                         tagValue.setAttribute('style', `
-                            background-color: rgba(${this.hexToRgb(colors[day])}, 0.1);
-                            color: ${colors[day]};
-                            padding: 2px 8px;
-                            border-radius: 4px;
-                            font-size: 0.7em;
+                            background-color: rgba(${this.hexToRgb(color)}, 0.1);
+                            color: ${color};
+                            padding: 1px 6px;
+                            border-radius: 3px;
+                            font-size: 0.65em;
                             font-weight: 500;
                             text-transform: capitalize;
                         `);
@@ -290,15 +331,15 @@ export class WeeklyView {
 
                 // Try to extract highlights from the file content
                 try {
-                    const fileContent = await this.dv.app.vault.cachedRead(file);
+                    const fileContent = await this.dv.app.vault.read(file);
                     const highlights = this.dv.weeklyTag.extractHighlightsFromContent(fileContent);
 
                     if (highlights.length > 0) {
-                        // Create highlights list
+                        // Create highlights list with more compact styling
                         const highlightsList = fileContainer.createEl('ul');
                         highlightsList.setAttribute('style', `
                             margin: 0;
-                            padding-left: 16px;
+                            padding-left: 14px;
                             list-style-type: none;
                         `);
 
@@ -306,23 +347,23 @@ export class WeeklyView {
                             const highlightItem = highlightsList.createEl('li');
                             highlightItem.setAttribute('style', `
                                 position: relative;
-                                padding-left: 12px;
-                                margin-bottom: 6px;
-                                line-height: 1.4;
+                                padding-left: 10px;
+                                margin-bottom: 4px;
+                                line-height: 1.2;
                                 color: #334155;
-                                font-size: 0.9em;
+                                font-size: 0.85em;
                             `);
 
-                            // Add quote marker
+                            // Add quote marker but make it smaller
                             highlightItem.createEl('span', {
                                 text: '❝',
                                 attr: {
                                     style: `
                                         position: absolute;
-                                        left: -5px;
+                                        left: -4px;
                                         top: -2px;
-                                        color: ${colors[day]};
-                                        font-size: 1.2em;
+                                        color: ${color};
+                                        font-size: 1em;
                                     `
                                 }
                             });
@@ -330,26 +371,39 @@ export class WeeklyView {
                             highlightItem.createEl('span', { text: highlight });
                         });
                     } else {
-                        // No highlights found, add a note
+                        // No highlights found, make the message more compact
                         const noHighlights = fileContainer.createEl('div');
-                        noHighlights.textContent = 'No specific highlights found in this file.';
+                        noHighlights.textContent = 'No highlights found.';
                         noHighlights.setAttribute('style', `
                             font-style: italic;
                             color: #94a3b8;
-                            font-size: 0.9em;
+                            font-size: 0.75em;
+                            margin-top: 2px;
                         `);
                     }
                 } catch (e) {
                     console.error(`Error reading file ${file.path}:`, e);
-                    const errorMessage = fileContainer.createEl('div');
-                    errorMessage.textContent = 'Error reading highlights.';
-                    errorMessage.setAttribute('style', 'color: #FF6B6B; font-size: 0.9em;');
+                    // const errorMessage = fileContainer.createEl('div');
+                    // errorMessage.textContent = 'Error reading highlights.';
+                    // errorMessage.setAttribute('style', 'color: #FF6B6B; font-size: 0.9em;');
                 }
             }
         }
     }
 
-
+    /**
+     * Helper method to extract date from filename (format YYYY-MM-DD)
+     */
+    private getFileDateFromFilename(filename: string): Date | null {
+        const match = filename.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (match) {
+            const year = parseInt(match[1]);
+            const month = parseInt(match[2]) - 1;  // Month is 0-indexed in JavaScript
+            const day = parseInt(match[3]);
+            return new Date(year, month, day);
+        }
+        return null;
+    }
 
     /**
      * Converts hex color to RGB values string (e.g. "59, 130, 246")
@@ -1147,17 +1201,25 @@ export class WeeklyView {
 
         // Render tasks section
         const tasksContainer = dashboardContainer.createEl('div');
+        await this.renderWeeklyTime(filename, dashboardContainer, component);
         await this.renderWeeklyTasksAsTable(tasks, filename, component, tasksContainer);
 
-        // Render time widget
-        await this.renderWeeklyTime(filename, dashboardContainer, component);
 
         // Render reflections section
         await this.renderReflections(filename, component, dashboardContainer);
+        await this.renderStats(tasks, filename, dashboardContainer);
 
         // Ensure styles are applied
         this.reloadStyles();
 
         return dashboardContainer;
+    }
+
+    /**
+     * Helper method to get short day name from day index
+     */
+    private getShortDayName(dayIndex: number): string {
+        const shortDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        return shortDays[dayIndex];
     }
 }

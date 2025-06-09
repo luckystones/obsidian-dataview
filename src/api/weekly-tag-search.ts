@@ -6,6 +6,8 @@ import { WeekUtils } from './WeekUtils';
 export interface TaggedFile extends TFile {
     /** The values of the tag if the tag has values (e.g. #tag/value1/value2) */
     tagValues?: string[];
+    /** The source field name that was matched (e.g. "highlight", "feeling", etc.) */
+    source?: string;
 }
 
 export interface WeeklyTagGroup {
@@ -23,8 +25,8 @@ export interface WeeklyTagOptions {
     year: number;
     /** The week number to search for (1-52) */
     week: number;
-    /** The tag to search for (without the # prefix) */
-    tag: string;
+    /** The tag or tags to search for (without the # prefix). Can be a single string or an array of strings. */
+    tag: string | string[];
     /** The path to search for files in. Defaults to "/daily" */
     searchPath?: string;
     /** The filename to use for rendering (format: YYYY-WW). If not provided, will be generated from year and week */
@@ -82,7 +84,7 @@ export class WeeklyTagApi {
         // Get filename using the extracted method
         const filename = this.getFilenameFromOptions(options);
 
-        console.log("🐞 searchFilesWithTag", filename);
+        console.log("🐞 searchFilesWithTag", filename, tag);
 
         try {
             // Parse year and week from filename if they weren't provided directly
@@ -102,8 +104,8 @@ export class WeeklyTagApi {
             // Get the date range for the week
             const { firstMonday, lastSunday } = WeekUtils.getWeekDateRange(yearToUse, weekToUse);
 
-            // Search for files with the tag in the given path
-            const files = await this.findFilesWithTag(tag, searchPath, firstMonday, lastSunday);
+            // Search for files with the tags/fields in the given path
+            const files = await this.findFilesWithFields(tag, searchPath, firstMonday, lastSunday);
 
             // Group the files by day of week
             const groupedFiles = this.groupFilesByDay(files);
@@ -111,7 +113,8 @@ export class WeeklyTagApi {
             return groupedFiles;
         } catch (e) {
             console.error('Error in searchFilesWithTag:', e);
-            new Notice(`Error searching for files with tag #${tag}: ${e.message}`);
+            const tagDisplay = Array.isArray(tag) ? tag.join(', ') : tag;
+            new Notice(`Error searching for files with fields: ${tagDisplay}: ${e.message}`);
 
             // Return empty groups
             return this.createEmptyWeeklyTagGroup();
@@ -119,23 +122,23 @@ export class WeeklyTagApi {
     }
 
     /**
-     * Finds files with a specific tag in the given path within a date range
-     * @param tag The tag to search for (without the # prefix)
+     * Finds files with specific inline fields in the given path within a date range
+     * @param fieldNames Array of field names to search for
      * @param searchPath The path to search for files in
      * @param startDate The start date of the search range
      * @param endDate The end date of the search range
      * @returns An array of files matching the criteria
      */
-    private async findFilesWithTag(
-        tag: string,
+    private async findFilesWithFields(
+        fieldNames: string | string[],
         searchPath: string,
         startDate: Date,
         endDate: Date
     ): Promise<TaggedFile[]> {
-        console.log("🐞 findFilesWithTag", tag, searchPath, startDate, endDate);
+        console.log("🐞 findFilesWithFields", fieldNames, searchPath, startDate, endDate);
         try {
-            // Ensure tag doesn't have # prefix
-            const cleanTag = tag.startsWith('#') ? tag.substring(1) : tag;
+            // Ensure fieldNames is an array
+            const fieldNamesArray = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
 
             // Use DataView's pages API instead of direct vault access
             // This is more efficient as it uses DataView's cached metadata
@@ -146,7 +149,7 @@ export class WeeklyTagApi {
                 return [];
             }
 
-            // Filter files by date and tag
+            // Filter files by date and inline field
             const matchingFiles: TaggedFile[] = [];
 
             console.log("🐞 pages", pages);
@@ -173,59 +176,143 @@ export class WeeklyTagApi {
                     continue;
                 }
 
-                // Check if page has the tag
-                let hasMatchingTag = false;
-                let matchingTagValues: string[] = [];
+                // For each field name, collect values separately
+                const fieldEntries: { fieldName: string, values: string[] }[] = [];
 
-                // Look for tags in the page tags field
-                if (page.file.tags && Array.isArray(page.file.tags)) {
-                    console.log("🐞 page.file.tags", page.file.tags);
-                    // DataView returns tags without the # prefix
-                    for (const pageTag of page.file.tags) {
-                        // Convert to string in case it's not already
-                        const tagStr = String(pageTag).toLowerCase();
+                // First check if the fields exist in dataview's cached metadata
+                for (const fieldName of fieldNamesArray) {
+                    if (page[fieldName] !== undefined) {
+                        console.log(`🐞 Found field ${fieldName} in page metadata:`, page[fieldName]);
 
-                        console.log("🐞 checking if tagStr: ", tagStr, "is a match", cleanTag.toLowerCase());
-                        if (tagStr === cleanTag.toLowerCase() ||
-                            tagStr.startsWith(`${cleanTag.toLowerCase()}/`)) {
+                        // Extract values for this field
+                        const fieldValues: string[] = [];
 
-                            console.log("🐞 hasMatchingTag", tagStr);
-                            hasMatchingTag = true;
-
-                            // Extract values from hierarchical tags
-                            if (tagStr.includes('/')) {
-                                console.log("🐞 tagStr.includes('/')", tagStr);
-                                const tagPrefix = `${cleanTag.toLowerCase()}/`;
-                                if (tagStr.startsWith(tagPrefix)) {
-                                    // Extract values part (everything after tag/)
-                                    const valuesStr = tagStr.substring(tagPrefix.length);
-                                    // Split by / to get individual values
-                                    const values = valuesStr.split('/').filter(v => v.trim() !== '');
-
-                                    // Add to values array
-                                    if (values.length > 0) {
-                                        matchingTagValues.push(...values);
-                                    }
-                                }
+                        // Extract values if it's an array or convert to string if it's not
+                        if (Array.isArray(page[fieldName])) {
+                            fieldValues.push(...page[fieldName].map((v: any) => String(v)));
+                        } else {
+                            const value = String(page[fieldName]).trim();
+                            if (value) {
+                                fieldValues.push(value);
                             }
+                        }
+
+                        if (fieldValues.length > 0) {
+                            fieldEntries.push({
+                                fieldName,
+                                values: fieldValues
+                            });
                         }
                     }
                 }
 
-                if (hasMatchingTag) {
-                    // Create a tagged file by extending the TFile
+                // If no fields found in metadata, check file content directly
+                if (fieldEntries.length === 0) {
+                    try {
+                        // Read file content
+                        const content = await this.dv.app.vault.read(file);
+                        console.log(`🐞 Checking file content for inline fields: ${fieldNamesArray.join(', ')} in ${file.path}`);
+
+                        // Check each field name in content
+                        for (const fieldName of fieldNamesArray) {
+                            const fieldValues: string[] = [];
+
+                            // Look for the inline field pattern: fieldName:: value
+                            // This regex looks for fieldName:: value patterns
+                            const fieldRegex = new RegExp(`${fieldName}\\s*::\\s*([^\\n]+)`, 'gi');
+                            const matches = [...content.matchAll(fieldRegex)];
+
+                            if (matches && matches.length > 0) {
+                                console.log(`🐞 Found inline field ${fieldName}:: in file:`, file.path);
+
+                                // Extract values from all matches
+                                for (const match of matches) {
+                                    if (match[1]) { // The value part
+                                        const value = match[1].trim();
+                                        if (value) {
+                                            console.log(`🐞 Extracted field value:`, value);
+                                            fieldValues.push(value);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Also check frontmatter for the field
+                            const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+                            if (frontmatterMatch && frontmatterMatch[1]) {
+                                const frontmatter = frontmatterMatch[1];
+
+                                // Look for fieldName: in frontmatter
+                                const fieldLineRegex = new RegExp(`${fieldName}\\s*:(.*?)($|\\n)`, 'i');
+                                const fieldLineMatch = frontmatter.match(fieldLineRegex);
+
+                                if (fieldLineMatch && fieldLineMatch[1]) {
+                                    const value = fieldLineMatch[1].trim();
+                                    console.log(`🐞 Found field in frontmatter: ${fieldName}: ${value}`);
+
+                                    if (value) {
+                                        // Handle array values in YAML [item1, item2] format
+                                        if (value.startsWith('[') && value.endsWith(']')) {
+                                            // Simple splitting - for more complex YAML you'd need a parser
+                                            const items = value.slice(1, -1).split(',');
+                                            for (const item of items) {
+                                                const cleanItem = item.trim();
+                                                if (cleanItem) {
+                                                    fieldValues.push(cleanItem);
+                                                }
+                                            }
+                                        } else {
+                                            fieldValues.push(value);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // If we found values for this field, add to our entries
+                            if (fieldValues.length > 0) {
+                                fieldEntries.push({
+                                    fieldName,
+                                    values: fieldValues
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Error reading file content:", e);
+                    }
+                }
+
+                // Create a separate TaggedFile for each field type
+                for (const entry of fieldEntries) {
+                    // Create a tagged file by cloning the original file
                     const taggedFile = file as TaggedFile;
 
-                    // Add the tag values
-                    taggedFile.tagValues = matchingTagValues;
+                    // Add the field values
+                    taggedFile.tagValues = [...entry.values]; // Make a copy to avoid reference issues
 
-                    matchingFiles.push(taggedFile);
+                    // Set the source field name
+                    taggedFile.source = entry.fieldName;
+
+                    // For consistent behavior with your UI code, we need to make a proper copy
+                    // Since TFile has non-enumerable properties, we need to manually copy the ones we need
+                    const taggedFileCopy: TaggedFile = {
+                        path: taggedFile.path,
+                        name: taggedFile.name,
+                        basename: taggedFile.basename,
+                        extension: taggedFile.extension,
+                        stat: taggedFile.stat,
+                        vault: taggedFile.vault,
+                        parent: taggedFile.parent,
+                        tagValues: [...entry.values],
+                        source: entry.fieldName
+                    } as TaggedFile; // Cast to TaggedFile to avoid TypeScript errors
+
+                    matchingFiles.push(taggedFileCopy);
                 }
             }
 
             return matchingFiles;
         } catch (e) {
-            console.error('Error in findFilesWithTag:', e);
+            console.error('Error in findFilesWithFields:', e);
             return [];
         }
     }
@@ -453,4 +540,4 @@ export class WeeklyTagApi {
 
         return highlights;
     }
-} 
+}
