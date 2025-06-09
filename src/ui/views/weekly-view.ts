@@ -425,14 +425,14 @@ export class WeeklyView {
     /**
      * Renders task statistics as a pie chart
      */
-    private renderStats(
+    private async renderStats(
         tasks: WeeklyTaskGroup,
         filename: string,
         container: HTMLElement
-    ): void {
+    ): Promise<HTMLElement> {
         // Create container for statistics
         const statsContainer = container.createEl('div');
-        statsContainer.setAttribute('style', 'margin: 1em auto 2em; display: flex; justify-content: center; align-items: center;');
+        statsContainer.setAttribute('style', 'display: flex; justify-content: center; align-items: center; flex-grow: 1;');
 
         // Aggregate all tasks
         const allTasks: STask[] = [];
@@ -441,7 +441,7 @@ export class WeeklyView {
         });
 
         if (allTasks.length === 0) {
-            return; // Skip if no tasks
+            return statsContainer; // Skip if no tasks
         }
 
         // Group tasks by filename
@@ -492,6 +492,8 @@ export class WeeklyView {
 
         // Create pie chart
         this.createPieChart(objectives, statsContainer);
+
+        return statsContainer;
     }
 
     /**
@@ -503,15 +505,15 @@ export class WeeklyView {
     ): void {
         // Create flex container for chart and summary
         const flexContainer = container.createEl('div');
-        flexContainer.setAttribute('style', 'display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 20px;');
+        flexContainer.setAttribute('style', 'display: flex; flex-direction: row; align-items: stretch; justify-content: center; gap: 20px; min-height: 280px;');
 
         // Create chart container
         const chartContainer = flexContainer.createEl('div');
         chartContainer.setAttribute('style', 'width: 280px; height: 280px; position: relative;');
 
-        // Create summary container
+        // Create summary container - modified to stretch horizontally
         const summaryContainer = flexContainer.createEl('div');
-        summaryContainer.setAttribute('style', 'min-width: 200px; max-width: 250px;');
+        summaryContainer.setAttribute('style', 'min-width: 200px; flex-grow: 1; display: flex;');
 
         // Calculate total tasks for percentage
         const totalTasks = objectives.reduce((sum, obj) => sum + obj.todo + obj.done, 0);
@@ -598,101 +600,125 @@ export class WeeklyView {
             font-weight: 600;
         `);
 
-        // Create task summary table
-        const summaryTable = summaryContainer.createEl('div');
-        summaryTable.setAttribute('style', `
-            background: rgba(22, 33, 51, 0.7);
-            border-radius: 8px;
-            padding: 12px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        `);
+        // Calculate how many columns we need based on the number of objectives
+        const itemsPerColumn = 5;
+        const numColumns = Math.max(1, Math.ceil(objectives.length / itemsPerColumn));
 
-        // Add table header
-        const tableHeader = summaryTable.createEl('div');
-        tableHeader.setAttribute('style', `
+        // Create columns container to hold multiple columns
+        const columnsContainer = summaryContainer.createEl('div');
+        columnsContainer.setAttribute('style', `
             display: grid;
-            grid-template-columns: minmax(100px, auto) 70px;
-            padding-bottom: 8px;
-            margin-bottom: 8px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-            font-weight: 600;
-            font-size: 13px;
-            color: #f8fafc;
+            grid-template-columns: repeat(${numColumns}, 1fr);
+            gap: 10px;
+            width: 100%;
         `);
-
-        const fileHeaderCell = tableHeader.createEl('div');
-        fileHeaderCell.textContent = 'File';
-        fileHeaderCell.setAttribute('style', 'padding: 4px 8px;');
-
-        const statsHeaderCell = tableHeader.createEl('div');
-        statsHeaderCell.textContent = 'Tasks';
-        statsHeaderCell.setAttribute('style', 'padding: 4px 8px; text-align: right;');
 
         // Sort objectives by total task count (descending)
         objectives.sort((a, b) => (b.done + b.todo) - (a.done + a.todo));
 
-        // Add rows for each file
-        objectives.forEach((obj) => {
-            const total = obj.done + obj.todo;
-            if (total === 0) return;
+        // Create columns of summary tables
+        for (let colIndex = 0; colIndex < numColumns; colIndex++) {
+            // Create task summary table for this column
+            const summaryTable = columnsContainer.createEl('div');
+            summaryTable.setAttribute('style', `
+                background: rgba(22, 33, 51, 0.7);
+                border-radius: 8px;
+                padding: 12px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+            `);
 
-            const row = summaryTable.createEl('div');
-            row.setAttribute('style', `
+            // Add table header
+            const tableHeader = summaryTable.createEl('div');
+            tableHeader.setAttribute('style', `
                 display: grid;
                 grid-template-columns: minmax(100px, auto) 70px;
-                font-size: 12px;
-                margin-bottom: 4px;
-                padding: 4px 0;
-                border-radius: 4px;
+                padding-bottom: 8px;
+                margin-bottom: 8px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+                font-weight: 600;
+                font-size: 13px;
                 color: #f8fafc;
             `);
 
-            // Create color indicator
-            const fileCell = row.createEl('div');
-            fileCell.setAttribute('style', 'display: flex; align-items: center; gap: 6px; padding: 4px 8px;');
+            const fileHeaderCell = tableHeader.createEl('div');
+            fileHeaderCell.textContent = 'File';
+            fileHeaderCell.setAttribute('style', 'padding: 4px 8px;');
 
-            const colorIndicator = fileCell.createEl('div');
-            colorIndicator.setAttribute('style', `
-                width: 12px;
-                height: 12px;
-                background-color: ${obj.color};
-                border-radius: 3px;
-            `);
+            const statsHeaderCell = tableHeader.createEl('div');
+            statsHeaderCell.textContent = 'Tasks';
+            statsHeaderCell.setAttribute('style', 'padding: 4px 8px; text-align: right;');
 
-            const fileName = fileCell.createEl('div');
-            fileName.textContent = obj.name.length > 15 ? obj.name.substring(0, 15) + '...' : obj.name;
-            fileName.setAttribute('style', 'white-space: nowrap; overflow: hidden; text-overflow: ellipsis;');
+            // Calculate the range of objectives for this column
+            const startIdx = colIndex * itemsPerColumn;
+            const endIdx = Math.min(startIdx + itemsPerColumn, objectives.length);
 
-            // Create task count with completion percentage
-            const statsCell = row.createEl('div');
-            statsCell.setAttribute('style', 'padding: 4px 8px; text-align: right; display: flex; justify-content: flex-end; align-items: center; gap: 6px;');
+            // Add rows for each file in this column
+            for (let i = startIdx; i < endIdx; i++) {
+                const obj = objectives[i];
+                const total = obj.done + obj.todo;
+                if (total === 0) continue;
 
-            const percentage = Math.round((obj.done / total) * 100);
+                const row = summaryTable.createEl('div');
+                row.setAttribute('style', `
+                    display: grid;
+                    grid-template-columns: minmax(100px, auto) 70px;
+                    font-size: 12px;
+                    margin-bottom: 4px;
+                    padding: 4px 0;
+                    border-radius: 4px;
+                    color: #f8fafc;
+                `);
 
-            const miniProgress = statsCell.createEl('div');
-            miniProgress.setAttribute('style', `
-                width: 24px;
-                height: 4px;
-                background: rgba(255, 255, 255, 0.2);
-                border-radius: 2px;
-                overflow: hidden;
-                position: relative;
-            `);
+                // Create color indicator
+                const fileCell = row.createEl('div');
+                fileCell.setAttribute('style', 'display: flex; align-items: center; gap: 6px; padding: 4px 8px;');
 
-            const progressFill = miniProgress.createEl('div');
-            progressFill.setAttribute('style', `
-                position: absolute;
-                top: 0;
-                left: 0;
-                height: 100%;
-                width: ${percentage}%;
-                background-color: ${percentage > 50 ? '#50C878' : '#FF6B6B'};
-                border-radius: 2px;
-            `);
+                const colorIndicator = fileCell.createEl('div');
+                colorIndicator.setAttribute('style', `
+                    width: 12px;
+                    height: 12px;
+                    background-color: ${obj.color};
+                    border-radius: 3px;
+                `);
 
-            const taskCount = statsCell.createEl('div');
-            taskCount.innerHTML = `<span style="color: #50C878;">${obj.done}</span>/<span style="color: #FF6B6B;">${total}</span>`;
-        });
+                const fileName = fileCell.createEl('div');
+                fileName.textContent = obj.name.length > 15 ? obj.name.substring(0, 15) + '...' : obj.name;
+                fileName.setAttribute('style', 'white-space: nowrap; overflow: hidden; text-overflow: ellipsis;');
+
+                // Create task count with completion percentage
+                const statsCell = row.createEl('div');
+                statsCell.setAttribute('style', 'padding: 4px 8px; text-align: right; display: flex; justify-content: flex-end; align-items: center; gap: 6px;');
+
+                const percentage = Math.round((obj.done / total) * 100);
+
+                const miniProgress = statsCell.createEl('div');
+                miniProgress.setAttribute('style', `
+                    width: 24px;
+                    height: 4px;
+                    background: rgba(255, 255, 255, 0.2);
+                    border-radius: 2px;
+                    overflow: hidden;
+                    position: relative;
+                `);
+
+                const progressFill = miniProgress.createEl('div');
+                progressFill.setAttribute('style', `
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    height: 100%;
+                    width: ${percentage}%;
+                    background-color: ${percentage > 50 ? '#50C878' : '#FF6B6B'};
+                    border-radius: 2px;
+                `);
+
+                const taskCount = statsCell.createEl('div');
+                taskCount.innerHTML = `<span style="color: #50C878;">${obj.done}</span>/<span style="color: #FF6B6B;">${total}</span>`;
+            }
+        }
 
         // Add filename labels inside segments to help identify them in the chart
         startAngle = 0;
@@ -763,7 +789,7 @@ export class WeeklyView {
         // Create a container for the age indicators
         console.log("🐞🐞🐞 calling age indicator")
         const timeContainer = container.createEl('div');
-        timeContainer.setAttribute('style', 'margin: 2em auto; width: 260px; height: 260px; position: relative;');
+        timeContainer.setAttribute('style', 'width: 260px; height: 260px; position: relative;');
 
         // Get the last day of the week from the filename
         const lastDay = this.getLastDayOfWeek(filename);
@@ -1199,15 +1225,20 @@ export class WeeklyView {
         const dashboardContainer = container.createEl('div');
         dashboardContainer.setAttribute('style', 'margin: 1em 0;');
 
+        // Create horizontal flex container for time and stats
+        const timeStatsContainer = dashboardContainer.createEl('div');
+        timeStatsContainer.setAttribute('style', 'display: flex; flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; min-height: 280px;');
+
+        // Render weekly time and stats side by side
+        await this.renderStats(tasks, filename, timeStatsContainer);
+        await this.renderWeeklyTime(filename, timeStatsContainer, component);
+
         // Render tasks section
         const tasksContainer = dashboardContainer.createEl('div');
-        await this.renderWeeklyTime(filename, dashboardContainer, component);
         await this.renderWeeklyTasksAsTable(tasks, filename, component, tasksContainer);
-
 
         // Render reflections section
         await this.renderReflections(filename, component, dashboardContainer);
-        await this.renderStats(tasks, filename, dashboardContainer);
 
         // Ensure styles are applied
         this.reloadStyles();
