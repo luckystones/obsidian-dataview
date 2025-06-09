@@ -1,5 +1,12 @@
 import { App, TFile } from 'obsidian';
 
+export interface ExpenseItem {
+    date: string;
+    description: string;
+    amount: number;
+    rawText?: string;
+}
+
 export interface Category {
     name: string;
     places: string[];
@@ -15,6 +22,7 @@ export interface DataEntry {
     monthyear: string;
     category: string;
     amount: number;
+    expenses: ExpenseItem[]; // List of individual expenses in this category
 }
 
 export class ExpenseAnalyzer {
@@ -120,10 +128,10 @@ export class ExpenseAnalyzer {
     /**
      * Process expense data and aggregate by month/year and category
      * @param expenseData Array of expense lines
-     * @returns Aggregated expense data
+     * @returns Aggregated expense data with individual expense items
      */
-    private processExpenseData(expenseData: string[]): Record<string, Record<string, number>> {
-        const aggregatedData: Record<string, Record<string, number>> = {};
+    private processExpenseData(expenseData: string[]): Record<string, Record<string, { total: number, items: ExpenseItem[] }>> {
+        const aggregatedData: Record<string, Record<string, { total: number, items: ExpenseItem[] }>> = {};
 
         expenseData.forEach(expense => {
             try {
@@ -147,6 +155,13 @@ export class ExpenseAnalyzer {
                 // Validate date format (DD/MM/YYYY)
                 if (!date.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
                     console.warn(`Skipping expense line with invalid date format: "${expense}"`);
+                    return;
+                }
+
+                // Extract day, month, year from the date
+                const [day, month, year] = date.split("/");
+                if (isNaN(Number(month)) || isNaN(Number(year))) {
+                    console.warn(`Skipping expense line with invalid date: "${expense}" ${day}${month} ${year}`);
                     return;
                 }
 
@@ -174,12 +189,6 @@ export class ExpenseAnalyzer {
                 // Get category for this shop
                 const category = this.getCategory(shop, amount);
 
-                // Extract day, month, year from the date
-                const [day, month, year] = date.split("/");
-                if (isNaN(Number(month)) || isNaN(Number(year))) {
-                    console.warn(`Skipping expense line with invalid date: "${expense}" ${day}${month} ${year}`);
-                    return;
-                }
                 const monthYear = `${month}/${year}`;
 
                 // Initialize aggregated data for this month/year if needed
@@ -189,11 +198,25 @@ export class ExpenseAnalyzer {
 
                 // Initialize category for this month/year if needed
                 if (!aggregatedData[monthYear][category]) {
-                    aggregatedData[monthYear][category] = 0;
+                    aggregatedData[monthYear][category] = {
+                        total: 0,
+                        items: []
+                    };
                 }
 
-                // Add the amount to the corresponding category
-                aggregatedData[monthYear][category] += amount;
+                // Create expense item
+                const expenseItem: ExpenseItem = {
+                    date,
+                    description: shop,
+                    amount,
+                    rawText: expense
+                };
+
+                // Add the expense item to the category
+                aggregatedData[monthYear][category].items.push(expenseItem);
+
+                // Add the amount to the corresponding category total
+                aggregatedData[monthYear][category].total += amount;
             } catch (e) {
                 console.error(`Error processing expense line: "${expense}"`, e);
             }
@@ -229,12 +252,12 @@ export class ExpenseAnalyzer {
      * @param aggregatedData The aggregated expense data
      * @returns Sorted array of DataEntry objects
      */
-    private convertToDataEntries(aggregatedData: Record<string, Record<string, number>>): DataEntry[] {
+    private convertToDataEntries(aggregatedData: Record<string, Record<string, { total: number, items: ExpenseItem[] }>>): DataEntry[] {
         const dataEntries: DataEntry[] = [];
 
         for (const monthYear in aggregatedData) {
             for (const category in aggregatedData[monthYear]) {
-                const amount = aggregatedData[monthYear][category];
+                const { total, items } = aggregatedData[monthYear][category];
                 const [month, year] = monthYear.split("/");
 
                 dataEntries.push({
@@ -242,7 +265,8 @@ export class ExpenseAnalyzer {
                     year,
                     monthyear: monthYear,
                     category,
-                    amount
+                    amount: total,
+                    expenses: items
                 });
             }
         }
@@ -285,6 +309,14 @@ export class ExpenseAnalyzer {
             }
 
             output += ` ${entry.category} : ${entry.amount.toFixed(2)} TL\n`;
+
+            // Optionally add detailed expense items
+            if (entry.expenses && entry.expenses.length > 0) {
+                output += "   Details:\n";
+                entry.expenses.forEach(item => {
+                    output += `   - ${item.date} ${item.description}: ${item.amount.toFixed(2)} TL\n`;
+                });
+            }
         });
 
         return output;

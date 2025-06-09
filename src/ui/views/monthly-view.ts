@@ -1,10 +1,10 @@
-import { Component } from 'obsidian';
-import { DataviewApi } from '../../api/plugin-api';
 import { STask } from 'data-model/serialized/markdown';
+import { Component } from 'obsidian';
+import { DataEntry, ExpenseAnalyzer, ExpenseItem } from '../../../expense-analyzer';
 import { TaggedFile } from '../../api/inline-field-search';
 import { MonthlyTaskApi } from '../../api/monthly-task-search';
-import { ExpenseAnalyzer, DataEntry } from '../../../expense-analyzer';
 import { MonthUtils } from '../../api/MonthUtils';
+import { DataviewApi } from '../../api/plugin-api';
 
 interface TaskStatistic {
     name: string;
@@ -14,6 +14,8 @@ interface TaskStatistic {
     level: string;
     color: string;
 }
+
+
 
 export class MonthlyView {
     private dv: DataviewApi;
@@ -967,9 +969,10 @@ export class MonthlyView {
         expensesContainer.setAttribute('style', `
             margin: 2em 0;
             padding: 16px;
-            background: rgba(22, 33, 51, 0.03);
+            background: rgba(30, 41, 59, 0.7);
             border-radius: 8px;
-            border: 1px solid rgba(30, 41, 59, 0.1);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            overflow-x: auto; /* Add horizontal scrolling for small screens */
         `);
 
         // Add header
@@ -1004,15 +1007,44 @@ export class MonthlyView {
                 noExpenses.textContent = 'No expenses found for this month.';
                 noExpenses.setAttribute('style', `
                     text-align: center;
-                    color: #64748b;
+                    color: #cbd5e1;
                     font-style: italic;
                     padding: 16px;
                 `);
                 return expensesContainer;
             }
 
+            // Create a container for both visualization and details
+            const expenseContentContainer = expensesContainer.createEl('div');
+            expenseContentContainer.setAttribute('style', `
+                display: flex;
+                flex-direction: row;
+                gap: 20px;
+                flex-wrap: wrap;
+            `);
+
+            // Create container for visualization
+            const visualizationContainer = expenseContentContainer.createEl('div');
+            visualizationContainer.setAttribute('style', `
+                flex: 1 1 500px;
+                min-width: 0;
+            `);
+
+            // Create container for expense details
+            const detailsContainer = expenseContentContainer.createEl('div');
+            detailsContainer.setAttribute('style', `
+                flex: 1 1 300px;
+                min-width: 0;
+                display: none;
+                background: rgba(15, 23, 42, 0.5);
+                border-radius: 6px;
+                padding: 12px;
+                max-height: 500px;
+                overflow-y: auto;
+            `);
+
             // Render expense visualization
-            await this.renderExpenseVisualization(dataEntries, expensesContainer);
+            await this.renderExpenseVisualization(dataEntries, visualizationContainer, detailsContainer);
 
             // Render expense breakdown table
             await this.renderExpenseBreakdown(dataEntries, expensesContainer);
@@ -1028,13 +1060,167 @@ export class MonthlyView {
     }
 
     /**
+     * Shows detailed expenses for a selected category
+     * @param category The selected category
+     * @param totalAmount Total amount for the category
+     * @param detailsContainer Container to display the details
+     * @param expenseItems Array of expense items for this category
+     */
+    private showCategoryDetails(
+        category: string,
+        totalAmount: number,
+        detailsContainer: HTMLElement,
+        expenseItems: ExpenseItem[]
+    ): void {
+        // Clear previous details
+        detailsContainer.empty();
+
+        // Show the details container
+        detailsContainer.style.display = 'block';
+
+        // Create header
+        const headerContainer = detailsContainer.createEl('div');
+        headerContainer.setAttribute('style', `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 8px;
+        `);
+
+        const categoryTitle = headerContainer.createEl('h3');
+        categoryTitle.textContent = category;
+        categoryTitle.setAttribute('style', `
+            margin: 0;
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #ffffff;
+        `);
+
+        const closeButton = headerContainer.createEl('button');
+        closeButton.textContent = '×';
+        closeButton.setAttribute('style', `
+            background: none;
+            border: none;
+            color: #ffffff;
+            font-size: 1.2em;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 0 5px;
+        `);
+
+        closeButton.addEventListener('click', () => {
+            // Hide details container
+            detailsContainer.style.display = 'none';
+
+            // Remove highlighting from selected bar
+            document.querySelectorAll('.expense-bar-selected').forEach(el => {
+                el.classList.remove('expense-bar-selected');
+                // Reset the background to original color
+                const index = parseInt((el as HTMLElement).dataset.index || "0");
+                (el as HTMLElement).style.backgroundColor = this.chartColors[index % this.chartColors.length];
+            });
+        });
+
+        // Show total for this category
+        const totalContainer = detailsContainer.createEl('div');
+        totalContainer.setAttribute('style', `
+            font-size: 1.1em;
+            font-weight: 500;
+            color: #f87171;
+            margin-bottom: 12px;
+            text-align: right;
+        `);
+        totalContainer.textContent = `Total: ${totalAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`;
+
+        // Create expense items list
+        const itemsContainer = detailsContainer.createEl('div');
+        itemsContainer.setAttribute('style', `
+            margin-top: 8px;
+        `);
+
+        // Check if we have expense details
+        if (!expenseItems || expenseItems.length === 0) {
+            const noItems = itemsContainer.createEl('div');
+            noItems.textContent = 'No detailed expense data available for this category.';
+            noItems.setAttribute('style', `
+                text-align: center;
+                color: #cbd5e1;
+                font-style: italic;
+                padding: 16px;
+            `);
+            return;
+        }
+
+        // Sort expense details by date (newest first)
+        const sortedExpenses = [...expenseItems].sort((a, b) => {
+            const dateA = this.parseDate(a.date);
+            const dateB = this.parseDate(b.date);
+            return dateB.getTime() - dateA.getTime();
+        });
+
+        // Add expense items
+        sortedExpenses.forEach(item => {
+            const itemRow = itemsContainer.createEl('div');
+            itemRow.setAttribute('style', `
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            `);
+
+            const itemInfo = itemRow.createEl('div');
+            itemInfo.setAttribute('style', `
+                flex-grow: 1;
+            `);
+
+            const itemDate = itemInfo.createEl('div');
+            itemDate.textContent = item.date;
+            itemDate.setAttribute('style', `
+                font-size: 0.8em;
+                color: #cbd5e1;
+                margin-bottom: 2px;
+            `);
+
+            const itemDescription = itemInfo.createEl('div');
+            itemDescription.textContent = item.description;
+            itemDescription.setAttribute('style', `
+                font-size: 0.85em;
+                color: #ffffff;
+            `);
+
+            const itemAmount = itemRow.createEl('div');
+            itemAmount.textContent = `${item.amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`;
+            itemAmount.setAttribute('style', `
+                font-size: 0.85em;
+                color: #ffffff;
+                text-align: right;
+                margin-left: 10px;
+                white-space: nowrap;
+            `);
+        });
+    }
+
+    /**
+     * Parse date string (DD/MM/YYYY) to Date object
+     * @param dateStr Date string in DD/MM/YYYY format
+     */
+    private parseDate(dateStr: string): Date {
+        const [day, month, year] = dateStr.split('/');
+        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    }
+
+    /**
      * Renders a visualization of expense data
      * @param dataEntries The expense data entries
      * @param container The container to render the visualization in
+     * @param detailsContainer The container to show detailed expenses when a category is clicked
      */
     private async renderExpenseVisualization(
         dataEntries: DataEntry[],
-        container: HTMLElement
+        container: HTMLElement,
+        detailsContainer: HTMLElement
     ): Promise<void> {
         // Create visualization container
         const visualizationContainer = container.createEl('div');
@@ -1044,7 +1230,8 @@ export class MonthlyView {
             flex-direction: column;
             align-items: center;
         `);
-        //active filename
+
+        // Active filename
         const activeFilename = this.dv.app.workspace.getActiveFile()?.basename;
         if (!activeFilename) {
             console.error('No active file found');
@@ -1063,7 +1250,7 @@ export class MonthlyView {
         let totalExpenses = 0;
         try {
             totalExpenses = dataEntries.filter(entry => {
-                //filter if year and month is same
+                // Filter if year and month is same
                 const entryYear = Number(entry.year);
                 const entryMonth = Number(entry.month);
                 return entryYear === year && entryMonth === month;
@@ -1132,7 +1319,7 @@ export class MonthlyView {
             noData.textContent = 'No valid expense data available for visualization.';
             noData.setAttribute('style', `
                 text-align: center;
-                color: #64748b;
+                color: #cbd5e1;
                 font-style: italic;
                 padding: 20px;
                 border: 1px dashed #cbd5e1;
@@ -1188,6 +1375,7 @@ export class MonthlyView {
                 position: relative;
                 background-color: rgba(255, 255, 255, 0.1);
                 border-radius: 4px;
+                cursor: pointer;
             `);
 
             // Create bar with percentage tooltip
@@ -1197,11 +1385,54 @@ export class MonthlyView {
                 width: ${percentage}%;
                 background-color: ${barColor};
                 border-radius: 4px;
-                transition: width 0.3s ease;
+                transition: width 0.3s ease, background-color 0.3s ease;
                 min-width: 4px;
                 position: relative;
             `);
             bar.setAttribute('title', `${percentage.toFixed(1)}%`);
+
+            // Add click event to show category details
+            barWrapper.addEventListener('click', () => {
+                // Find the DataEntry for this category
+                const entry = dataEntries.find(entry =>
+                    entry.category === category &&
+                    Number(entry.year) === year &&
+                    Number(entry.month) === month
+                );
+
+                // Show details for this category using the expenses array from the DataEntry
+                if (entry && entry.expenses) {
+                    this.showCategoryDetails(category, amount, detailsContainer, entry.expenses);
+                } else {
+                    this.showCategoryDetails(category, amount, detailsContainer, []);
+                }
+
+                // Highlight the selected bar
+                document.querySelectorAll('.expense-bar-selected').forEach(el => {
+                    el.classList.remove('expense-bar-selected');
+                    // Reset the background to original color
+                    const index = parseInt((el as HTMLElement).dataset.index || "0");
+                    (el as HTMLElement).style.backgroundColor = this.chartColors[index % this.chartColors.length];
+                });
+
+                bar.classList.add('expense-bar-selected');
+                // Store index for color restoration
+                bar.dataset.index = index.toString();
+                bar.style.backgroundColor = this.lightenColor(barColor, 20);
+            });
+
+            // Add hover effect
+            barWrapper.addEventListener('mouseenter', () => {
+                if (!bar.classList.contains('expense-bar-selected')) {
+                    bar.style.backgroundColor = this.lightenColor(barColor, 10);
+                }
+            });
+
+            barWrapper.addEventListener('mouseleave', () => {
+                if (!bar.classList.contains('expense-bar-selected')) {
+                    bar.style.backgroundColor = barColor;
+                }
+            });
 
             // Create amount label - always right-aligned
             const amountLabel = barContainer.createEl('div');
@@ -1215,6 +1446,26 @@ export class MonthlyView {
                 white-space: nowrap;
             `);
         });
+    }
+
+    /**
+     * Lighten a color by the given percentage
+     * @param color Hex color string
+     * @param percent Percentage to lighten
+     */
+    private lightenColor(color: string, percent: number): string {
+        const num = parseInt(color.replace('#', ''), 16);
+        const amt = Math.round(2.55 * percent);
+        const R = (num >> 16) + amt;
+        const G = (num >> 8 & 0x00FF) + amt;
+        const B = (num & 0x0000FF) + amt;
+
+        return '#' + (
+            0x1000000 +
+            (R < 255 ? R : 255) * 0x10000 +
+            (G < 255 ? G : 255) * 0x100 +
+            (B < 255 ? B : 255)
+        ).toString(16).slice(1);
     }
 
     /**
