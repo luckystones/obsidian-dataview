@@ -3,6 +3,8 @@ import { DataviewApi } from '../../api/plugin-api';
 import { STask } from 'data-model/serialized/markdown';
 import { TaggedFile } from '../../api/inline-field-search';
 import { MonthlyTaskApi } from '../../api/monthly-task-search';
+import { ExpenseAnalyzer, DataEntry } from '../../../expense-analyzer';
+import { MonthUtils } from '../../api/MonthUtils';
 
 interface TaskStatistic {
     name: string;
@@ -55,6 +57,9 @@ export class MonthlyView {
 
         // Render reflections section
         await this.renderReflections(filename, component, dashboardContainer);
+
+        // Render expenses section
+        await this.renderExpenses(filename, component, dashboardContainer);
 
         return dashboardContainer;
     }
@@ -943,5 +948,453 @@ export class MonthlyView {
         }
 
         return null;
+    }
+
+    /**
+     * Renders expense analysis for the given month
+     * @param filename The filename in YYYY-Month format
+     * @param component The component to use for rendering
+     * @param container The container to render the expenses in
+     * @returns The container with the rendered expenses
+     */
+    public async renderExpenses(
+        filename: string,
+        component: Component,
+        container: HTMLElement
+    ): Promise<HTMLElement> {
+        // Create container for the expenses view
+        const expensesContainer = container.createEl('div');
+        expensesContainer.setAttribute('style', `
+            margin: 2em 0;
+            padding: 16px;
+            background: rgba(22, 33, 51, 0.03);
+            border-radius: 8px;
+            border: 1px solid rgba(30, 41, 59, 0.1);
+        `);
+
+        // Add header
+        const header = expensesContainer.createEl('h2');
+        header.textContent = 'Monthly Expenses';
+        header.setAttribute('style', `
+            margin: 0 0 16px 0;
+            font-size: 1.4em;
+            color: #e11d48;
+            font-weight: 600;
+            text-align: center;
+            border-bottom: 2px solid rgba(225, 29, 72, 0.2);
+            padding-bottom: 8px;
+        `);
+
+        try {
+            // Initialize the expense analyzer
+            const analyzer = new ExpenseAnalyzer(this.dv.app);
+
+            // Set analyze other option to true (can be configurable later)
+            analyzer.setAnalyzeOther(true);
+
+            const expenseFile = 'game/financial/budget/credit_card_expenses.md';
+            // Config file path
+            const configFilePath = 'game/financial/budget/credit_card_analysis.md';
+
+            // Run the analysis on the expense file
+            const dataEntries = await analyzer.analyzeExpenses(expenseFile, configFilePath);
+
+            if (dataEntries.length === 0) {
+                const noExpenses = expensesContainer.createEl('div');
+                noExpenses.textContent = 'No expenses found for this month.';
+                noExpenses.setAttribute('style', `
+                    text-align: center;
+                    color: #64748b;
+                    font-style: italic;
+                    padding: 16px;
+                `);
+                return expensesContainer;
+            }
+
+            // Render expense visualization
+            await this.renderExpenseVisualization(dataEntries, expensesContainer);
+
+            // Render expense breakdown table
+            await this.renderExpenseBreakdown(dataEntries, expensesContainer);
+
+            return expensesContainer;
+        } catch (e) {
+            console.error('Error rendering expenses:', e);
+            const errorMessage = expensesContainer.createEl('div');
+            errorMessage.textContent = `Error loading expenses: ${e.message}`;
+            errorMessage.setAttribute('style', 'color: #FF6B6B; text-align: center;');
+            return expensesContainer;
+        }
+    }
+
+    /**
+     * Renders a visualization of expense data
+     * @param dataEntries The expense data entries
+     * @param container The container to render the visualization in
+     */
+    private async renderExpenseVisualization(
+        dataEntries: DataEntry[],
+        container: HTMLElement
+    ): Promise<void> {
+        // Create visualization container
+        const visualizationContainer = container.createEl('div');
+        visualizationContainer.setAttribute('style', `
+            margin: 1em 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        `);
+        //active filename
+        const activeFilename = this.dv.app.workspace.getActiveFile()?.basename;
+        if (!activeFilename) {
+            console.error('No active file found');
+            return;
+        }
+        const yearAndMonth = MonthUtils.parseYearAndMonthFromFilename(activeFilename);
+        console.log(yearAndMonth);
+        if (!yearAndMonth) {
+            console.error('Invalid filename format:', activeFilename);
+            return;
+        }
+        const year = yearAndMonth.year;
+        const month = yearAndMonth.month;
+
+        // Calculate total expenses with validation
+        let totalExpenses = 0;
+        try {
+            totalExpenses = dataEntries.filter(entry => {
+                //filter if year and month is same
+                const entryYear = Number(entry.year);
+                const entryMonth = Number(entry.month);
+                return entryYear === year && entryMonth === month;
+            }).reduce((sum, entry) => {
+                // Ensure the amount is a valid number
+                const amount = typeof entry.amount === 'number' && !isNaN(entry.amount)
+                    ? entry.amount
+                    : 0;
+                return sum + amount;
+            }, 0);
+        } catch (e) {
+            console.error('Error calculating total expenses:', e);
+        }
+
+        // Group entries by category and calculate category totals
+        const categoryTotals: Record<string, number> = {};
+        dataEntries.filter(entry => {
+            const entryYear = Number(entry.year);
+            const entryMonth = Number(entry.month);
+            return entryYear === year && entryMonth === month;
+        }).forEach(entry => {
+            // Skip entries with invalid amounts
+            if (typeof entry.amount !== 'number' || isNaN(entry.amount)) {
+                console.warn(`Skipping entry with invalid amount: ${entry.category}`);
+                return;
+            }
+
+            if (!categoryTotals[entry.category]) {
+                categoryTotals[entry.category] = 0;
+            }
+            categoryTotals[entry.category] += entry.amount;
+        });
+
+        // Sort categories by amount (descending)
+        const sortedCategories = Object.entries(categoryTotals)
+            .sort(([, amountA], [, amountB]) => amountB - amountA);
+
+        // Create total expenses display
+        const totalContainer = visualizationContainer.createEl('div');
+        totalContainer.setAttribute('style', `
+            font-size: 2em;
+            font-weight: 700;
+            color: #e11d48;
+            margin-bottom: 0.5em;
+            text-align: center;
+        `);
+
+        // Display total with validation
+        if (totalExpenses > 0) {
+            totalContainer.textContent = `${totalExpenses.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`;
+        } else {
+            totalContainer.textContent = `0,00 TL`;
+        }
+
+        // Create bar chart container
+        const chartContainer = visualizationContainer.createEl('div');
+        chartContainer.setAttribute('style', `
+            width: 100%;
+            max-width: 800px;
+            margin: 1em 0;
+        `);
+
+        // If there are no valid expenses, show a message
+        if (totalExpenses <= 0 || Object.keys(categoryTotals).length === 0) {
+            const noData = chartContainer.createEl('div');
+            noData.textContent = 'No valid expense data available for visualization.';
+            noData.setAttribute('style', `
+                text-align: center;
+                color: #64748b;
+                font-style: italic;
+                padding: 20px;
+                border: 1px dashed #cbd5e1;
+                border-radius: 6px;
+            `);
+            return;
+        }
+
+        // Limit to top 10 categories for better visualization
+        const topCategories = sortedCategories.slice(0, 10);
+
+        // Create bars for each category
+        topCategories.forEach(([category, amount], index) => {
+            // Skip invalid amounts
+            if (typeof amount !== 'number' || isNaN(amount) || amount <= 0) {
+                return;
+            }
+
+            // Calculate percentage with validation
+            const percentage = Math.max(1, Math.min(100, (amount / totalExpenses) * 100));
+            const barColor = this.chartColors[index % this.chartColors.length];
+
+            // Create bar container
+            const barContainer = chartContainer.createEl('div');
+            barContainer.setAttribute('style', `
+                display: grid;
+                grid-template-columns: 220px minmax(60px, 1fr) 120px;
+                gap: 12px;
+                align-items: center;
+                margin-bottom: 12px;
+                height: 30px;
+            `);
+
+            // Create category label
+            const categoryLabel = barContainer.createEl('div');
+            categoryLabel.textContent = category.length > 25 ? category.substring(0, 23) + '...' : category;
+            categoryLabel.setAttribute('style', `
+                font-size: 0.85em;
+                font-weight: 600;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                padding: 0 5px;
+                color: #ffffff;
+                text-shadow: 0px 1px 2px rgba(0, 0, 0, 0.5);
+            `);
+
+            // Create bar wrapper
+            const barWrapper = barContainer.createEl('div');
+            barWrapper.setAttribute('style', `
+                height: 100%;
+                width: 100%;
+                position: relative;
+                background-color: rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+            `);
+
+            // Create bar with percentage tooltip
+            const bar = barWrapper.createEl('div');
+            bar.setAttribute('style', `
+                height: 100%;
+                width: ${percentage}%;
+                background-color: ${barColor};
+                border-radius: 4px;
+                transition: width 0.3s ease;
+                min-width: 4px;
+                position: relative;
+            `);
+            bar.setAttribute('title', `${percentage.toFixed(1)}%`);
+
+            // Create amount label - always right-aligned
+            const amountLabel = barContainer.createEl('div');
+            amountLabel.textContent = `${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`;
+            amountLabel.setAttribute('style', `
+                font-size: 0.85em;
+                text-align: right;
+                font-weight: 500;
+                color: #ffffff;
+                text-shadow: 0px 1px 2px rgba(0, 0, 0, 0.5);
+                white-space: nowrap;
+            `);
+        });
+    }
+
+    /**
+     * Renders a detailed breakdown of expenses
+     * @param dataEntries The expense data entries
+     * @param container The container to render the breakdown in
+     */
+    private async renderExpenseBreakdown(
+        dataEntries: DataEntry[],
+        container: HTMLElement
+    ): Promise<void> {
+        // Create breakdown container
+        const breakdownContainer = container.createEl('div');
+        breakdownContainer.setAttribute('style', `
+            margin: 1em 0;
+            padding: 16px;
+            background: rgba(30, 41, 59, 0.7);
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            overflow-x: auto; /* Add horizontal scrolling for small screens */
+        `);
+
+        // Create breakdown header
+        const breakdownHeader = breakdownContainer.createEl('div');
+        breakdownHeader.textContent = 'Expense Breakdown';
+        breakdownHeader.setAttribute('style', `
+            font-size: 1.2em;
+            font-weight: 600;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+        `);
+
+        // Filter out entries with invalid amounts
+        const validEntries = dataEntries.filter(entry =>
+            typeof entry.amount === 'number' && !isNaN(entry.amount));
+
+        // Group entries by category
+        const categoryGroups: Record<string, DataEntry[]> = {};
+        validEntries.forEach(entry => {
+            if (!categoryGroups[entry.category]) {
+                categoryGroups[entry.category] = [];
+            }
+            categoryGroups[entry.category].push(entry);
+        });
+
+        // Calculate category totals
+        const categoryTotals: Record<string, number> = {};
+        Object.entries(categoryGroups).forEach(([category, entries]) => {
+            categoryTotals[category] = entries.reduce((sum, entry) => sum + entry.amount, 0);
+        });
+
+        // Sort categories by total amount (descending)
+        const sortedCategories = Object.entries(categoryTotals)
+            .sort(([, totalA], [, totalB]) => totalB - totalA);
+
+        // Check if we have any valid categories to display
+        if (sortedCategories.length === 0) {
+            const noData = breakdownContainer.createEl('div');
+            noData.textContent = 'No valid expense data found.';
+            noData.setAttribute('style', `
+                text-align: center;
+                color: #cbd5e1;
+                font-style: italic;
+                padding: 16px;
+            `);
+            return;
+        }
+
+        // Create table wrapper for better mobile view
+        const tableWrapper = breakdownContainer.createEl('div');
+        tableWrapper.setAttribute('style', `
+            width: 100%;
+            overflow-x: auto;
+        `);
+
+        // Create table for breakdown
+        const table = tableWrapper.createEl('table');
+        table.setAttribute('style', `
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 0.9em;
+            min-width: 500px; /* Ensure table doesn't get too compressed */
+            color: #f8fafc;
+        `);
+
+        // Create table header
+        const thead = table.createEl('thead');
+        const headerRow = thead.createEl('tr');
+        headerRow.setAttribute('style', `
+            background-color: rgba(51, 65, 85, 0.8);
+            position: sticky;
+            top: 0;
+        `);
+
+        const rankHeader = headerRow.createEl('th');
+        rankHeader.textContent = '#';
+        rankHeader.setAttribute('style', 'text-align: center; width: 50px; padding: 10px 8px; border-bottom: 2px solid rgba(100, 116, 139, 0.6);');
+
+        const categoryHeader = headerRow.createEl('th');
+        categoryHeader.textContent = 'Category';
+        categoryHeader.setAttribute('style', 'text-align: left; padding: 10px 8px; border-bottom: 2px solid rgba(100, 116, 139, 0.6);');
+
+        const amountHeader = headerRow.createEl('th');
+        amountHeader.textContent = 'Amount';
+        amountHeader.setAttribute('style', 'text-align: right; width: 140px; padding: 10px 8px; border-bottom: 2px solid rgba(100, 116, 139, 0.6);');
+
+        const percentHeader = headerRow.createEl('th');
+        percentHeader.textContent = '%';
+        percentHeader.setAttribute('style', 'text-align: right; width: 70px; padding: 10px 8px; border-bottom: 2px solid rgba(100, 116, 139, 0.6);');
+
+        // Create table body
+        const tbody = table.createEl('tbody');
+
+        // Calculate total expenses with validation
+        const totalExpenses = sortedCategories.reduce((sum, [, amount]) => sum + amount, 0);
+
+        if (totalExpenses <= 0) {
+            const noDataRow = tbody.createEl('tr');
+            const noDataCell = noDataRow.createEl('td');
+            noDataCell.textContent = 'Invalid total expense amount';
+            noDataCell.colSpan = 4;
+            noDataCell.setAttribute('style', 'text-align: center; padding: 20px; color: #cbd5e1; font-style: italic;');
+            return;
+        }
+
+        // Add rows for each category
+        sortedCategories.forEach(([category, amount], index) => {
+            // Skip categories with invalid amounts
+            if (typeof amount !== 'number' || isNaN(amount) || amount <= 0) {
+                return;
+            }
+
+            const row = tbody.createEl('tr');
+            row.setAttribute('style', `
+                ${index % 2 === 0 ? 'background-color: rgba(51, 65, 85, 0.4);' : 'background-color: rgba(51, 65, 85, 0.2);'}
+                transition: background-color 0.2s;
+            `);
+            row.addEventListener('mouseenter', () => {
+                row.style.backgroundColor = 'rgba(56, 189, 248, 0.2)';
+            });
+            row.addEventListener('mouseleave', () => {
+                row.style.backgroundColor = index % 2 === 0 ? 'rgba(51, 65, 85, 0.4)' : 'rgba(51, 65, 85, 0.2)';
+            });
+
+            const rankCell = row.createEl('td');
+            rankCell.textContent = (index + 1).toString();
+            rankCell.setAttribute('style', 'text-align: center; padding: 10px 8px; border-bottom: 1px solid rgba(100, 116, 139, 0.3);');
+
+            const categoryCell = row.createEl('td');
+            categoryCell.textContent = category;
+            categoryCell.setAttribute('style', 'text-align: left; padding: 10px 8px; border-bottom: 1px solid rgba(100, 116, 139, 0.3); max-width: 250px; overflow: hidden; text-overflow: ellipsis;');
+
+            const amountCell = row.createEl('td');
+            amountCell.textContent = amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TL';
+            amountCell.setAttribute('style', 'text-align: right; padding: 10px 8px; border-bottom: 1px solid rgba(100, 116, 139, 0.3); font-weight: 500; white-space: nowrap;');
+
+            const percentage = (amount / totalExpenses) * 100;
+            const percentCell = row.createEl('td');
+            percentCell.textContent = percentage.toFixed(1) + '%';
+            percentCell.setAttribute('style', 'text-align: right; padding: 10px 8px; border-bottom: 1px solid rgba(100, 116, 139, 0.3); white-space: nowrap;');
+        });
+
+        // Add total row
+        const totalRow = tbody.createEl('tr');
+        totalRow.setAttribute('style', 'font-weight: 700; background-color: rgba(51, 65, 85, 0.7);');
+
+        const totalLabelCell = totalRow.createEl('td');
+        totalLabelCell.textContent = 'TOTAL';
+        totalLabelCell.setAttribute('style', 'text-align: right; padding: 12px 8px; border-top: 2px solid rgba(100, 116, 139, 0.6);');
+        totalLabelCell.colSpan = 2;
+
+        const totalAmountCell = totalRow.createEl('td');
+        totalAmountCell.textContent = totalExpenses.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TL';
+        totalAmountCell.setAttribute('style', 'text-align: right; padding: 12px 8px; border-top: 2px solid rgba(100, 116, 139, 0.6); color: #f87171; white-space: nowrap;');
+
+        const totalPercentCell = totalRow.createEl('td');
+        totalPercentCell.textContent = '100%';
+        totalPercentCell.setAttribute('style', 'text-align: right; padding: 12px 8px; border-top: 2px solid rgba(100, 116, 139, 0.6); white-space: nowrap;');
     }
 } 
