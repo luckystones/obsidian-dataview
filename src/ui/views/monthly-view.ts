@@ -6,6 +6,18 @@ import { MonthlyTaskApi } from '../../api/monthly-task-search';
 import { MonthUtils } from '../../api/MonthUtils';
 import { DataviewApi } from '../../api/plugin-api';
 
+// Interface for popup state
+interface ExpenseEditPopup {
+    isOpen: boolean;
+    expense: ExpenseItem | null;
+    categoryOptions: string[];
+    selectedCategory: string;
+    originalCategory: string;
+    newCategoryKey: string;
+    element: HTMLElement | null;
+    currentDataEntry: DataEntry | null;
+}
+
 interface TaskStatistic {
     name: string;
     todo: number;
@@ -15,8 +27,6 @@ interface TaskStatistic {
     color: string;
 }
 
-
-
 export class MonthlyView {
     private dv: DataviewApi;
     private monthlyTaskApi: MonthlyTaskApi;
@@ -25,6 +35,18 @@ export class MonthlyView {
         '#8AFF80', '#80FFEA', '#80D8FF', '#9580FF',
         '#FF80BF', '#FF8095', '#B6FFDB', '#DBFFB6'
     ];
+
+    // Popup state
+    private popup: ExpenseEditPopup = {
+        isOpen: false,
+        expense: null,
+        categoryOptions: [],
+        selectedCategory: '',
+        originalCategory: '',
+        newCategoryKey: '',
+        element: null,
+        currentDataEntry: null
+    };
 
     constructor(dv: DataviewApi) {
         this.dv = dv;
@@ -1065,12 +1087,16 @@ export class MonthlyView {
      * @param totalAmount Total amount for the category
      * @param detailsContainer Container to display the details
      * @param expenseItems Array of expense items for this category
+     * @param dataEntries All data entries (needed for category options and updates)
+     * @param currentEntry Current data entry for this category
      */
     private showCategoryDetails(
         category: string,
         totalAmount: number,
         detailsContainer: HTMLElement,
-        expenseItems: ExpenseItem[]
+        expenseItems: ExpenseItem[],
+        dataEntries: DataEntry[],
+        currentEntry: DataEntry
     ): void {
         // Clear previous details
         detailsContainer.empty();
@@ -1111,6 +1137,9 @@ export class MonthlyView {
         `);
 
         closeButton.addEventListener('click', () => {
+            // Close any open popup first
+            this.closeExpensePopup();
+
             // Hide details container
             detailsContainer.style.display = 'none';
 
@@ -1153,6 +1182,12 @@ export class MonthlyView {
             return;
         }
 
+        // Get all available categories from data entries
+        const allCategories = new Set<string>();
+        dataEntries.forEach(entry => {
+            allCategories.add(entry.category);
+        });
+
         // Sort expense details by date (newest first)
         const sortedExpenses = [...expenseItems].sort((a, b) => {
             const dateA = this.parseDate(a.date);
@@ -1168,7 +1203,19 @@ export class MonthlyView {
                 justify-content: space-between;
                 padding: 8px 0;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                cursor: pointer;
+                transition: background-color 0.2s;
             `);
+            itemRow.classList.add('expense-item-row');
+
+            // Add hover effect
+            itemRow.addEventListener('mouseenter', () => {
+                itemRow.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+            });
+
+            itemRow.addEventListener('mouseleave', () => {
+                itemRow.style.backgroundColor = '';
+            });
 
             const itemInfo = itemRow.createEl('div');
             itemInfo.setAttribute('style', `
@@ -1199,7 +1246,288 @@ export class MonthlyView {
                 margin-left: 10px;
                 white-space: nowrap;
             `);
+
+            // Add click handler to show edit popup
+            itemRow.addEventListener('click', (e) => {
+                // Close any existing popup first
+                this.closeExpensePopup();
+
+                // Open new popup for this expense
+                this.openExpensePopup(item, Array.from(allCategories), category, currentEntry, itemRow, detailsContainer);
+            });
         });
+    }
+
+    /**
+     * Opens a popup for editing an expense
+     * @param expense The expense item to edit
+     * @param categoryOptions Available category options
+     * @param currentCategory Current category of the expense
+     * @param currentDataEntry Current data entry this expense belongs to
+     * @param itemRow The row element that was clicked
+     * @param detailsContainer The parent container for positioning
+     */
+    private openExpensePopup(
+        expense: ExpenseItem,
+        categoryOptions: string[],
+        currentCategory: string,
+        currentDataEntry: DataEntry,
+        itemRow: HTMLElement,
+        detailsContainer: HTMLElement
+    ): void {
+        // Update popup state
+        this.popup.isOpen = true;
+        this.popup.expense = expense;
+        this.popup.categoryOptions = categoryOptions;
+        this.popup.selectedCategory = currentCategory;
+        this.popup.originalCategory = currentCategory;
+        this.popup.newCategoryKey = '';
+        this.popup.currentDataEntry = currentDataEntry;
+
+        // Create popup element
+        const popupEl = document.createElement('div');
+        this.popup.element = popupEl;
+
+        // Style the popup
+        popupEl.setAttribute('style', `
+            position: absolute;
+            width: 300px;
+            background-color: #1e293b;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            padding: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+        `);
+
+        // Create title
+        const title = popupEl.createEl('h3');
+        title.textContent = 'Edit Expense Category';
+        title.setAttribute('style', `
+            margin: 0 0 12px 0;
+            font-size: 1em;
+            color: #ffffff;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 8px;
+        `);
+
+        // Expense display (non-editable)
+        const expenseDisplay = popupEl.createEl('div');
+        expenseDisplay.setAttribute('style', `
+            background-color: #2d3a4f;
+            border-radius: 4px;
+            padding: 8px;
+            margin-bottom: 12px;
+            font-size: 0.85em;
+            color: #cbd5e1;
+        `);
+        expenseDisplay.textContent = expense.rawText || `${expense.date} ${expense.description} ${expense.amount} TL`;
+
+        // Category dropdown
+        const categoryLabel = popupEl.createEl('label');
+        categoryLabel.textContent = 'Category:';
+        categoryLabel.setAttribute('style', `
+            display: block;
+            margin-bottom: 4px;
+            color: #cbd5e1;
+            font-size: 0.8em;
+        `);
+
+        const categorySelect = popupEl.createEl('select');
+        categorySelect.setAttribute('style', `
+            width: 100%;
+            padding: 6px 8px;
+            background-color: #2d3a4f;
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            margin-bottom: 12px;
+            font-size: 0.9em;
+        `);
+
+        // Add options to dropdown
+        categoryOptions.sort().forEach(category => {
+            const option = categorySelect.createEl('option');
+            option.value = category;
+            option.text = category;
+
+            // Select current category
+            if (category === currentCategory) {
+                option.selected = true;
+            }
+        });
+
+        categorySelect.addEventListener('change', () => {
+            this.popup.selectedCategory = categorySelect.value;
+        });
+
+        // New Category Key text area
+        const keyLabel = popupEl.createEl('label');
+        keyLabel.textContent = 'New Category Key:';
+        keyLabel.setAttribute('style', `
+            display: block;
+            margin-bottom: 4px;
+            color: #cbd5e1;
+            font-size: 0.8em;
+        `);
+
+        const keyInput = popupEl.createEl('input');
+        keyInput.type = 'text';
+        keyInput.placeholder = 'Enter new category keyword';
+        keyInput.setAttribute('style', `
+            width: 100%;
+            padding: 6px 8px;
+            background-color: #2d3a4f;
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        `);
+
+        keyInput.addEventListener('input', (e) => {
+            this.popup.newCategoryKey = (e.target as HTMLInputElement).value;
+        });
+
+        // Help text
+        const helpText = popupEl.createEl('div');
+        helpText.textContent = 'Add a keyword to help categorize similar expenses automatically in the future.';
+        helpText.setAttribute('style', `
+            font-size: 0.75em;
+            color: #94a3b8;
+            margin-bottom: 12px;
+            font-style: italic;
+        `);
+
+        // Button container
+        const buttonContainer = popupEl.createEl('div');
+        buttonContainer.setAttribute('style', `
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        `);
+
+        // Cancel button
+        const cancelButton = buttonContainer.createEl('button');
+        cancelButton.textContent = 'Cancel';
+        cancelButton.setAttribute('style', `
+            padding: 6px 12px;
+            background-color: transparent;
+            color: #cbd5e1;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+        `);
+
+        cancelButton.addEventListener('click', () => {
+            this.closeExpensePopup();
+        });
+
+        // OK button
+        const okButton = buttonContainer.createEl('button');
+        okButton.textContent = 'OK';
+        okButton.setAttribute('style', `
+            padding: 6px 12px;
+            background-color: #3b82f6;
+            color: #ffffff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+        `);
+
+        okButton.addEventListener('click', () => {
+            // Handle category change and new category key
+            this.changeExpenseCategory(expense, currentDataEntry, this.popup.selectedCategory, this.popup.newCategoryKey);
+
+            // Close popup
+            this.closeExpensePopup();
+        });
+
+        // Add popup to body
+        document.body.appendChild(popupEl);
+
+        // Position popup near the clicked row
+        const rect = itemRow.getBoundingClientRect();
+        const detailsRect = detailsContainer.getBoundingClientRect();
+
+        // Try to position so it doesn't overflow the container
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceRight = detailsRect.right - rect.left;
+
+        if (spaceBelow < 300) {
+            // Position above if not enough space below
+            popupEl.style.top = `${rect.top - popupEl.offsetHeight}px`;
+        } else {
+            popupEl.style.top = `${rect.bottom}px`;
+        }
+
+        if (spaceRight < 320) {
+            // Position to the left if not enough space to the right
+            popupEl.style.left = `${rect.right - popupEl.offsetWidth}px`;
+        } else {
+            popupEl.style.left = `${rect.left}px`;
+        }
+
+        // Add click outside handler
+        document.addEventListener('click', this.handleClickOutside.bind(this));
+
+        // Focus the new category key input
+        keyInput.focus();
+    }
+
+    /**
+     * Handles clicks outside the popup to close it
+     */
+    private handleClickOutside(e: MouseEvent): void {
+        if (this.popup.isOpen && this.popup.element) {
+            const target = e.target as HTMLElement;
+            if (!this.popup.element.contains(target) && !target.closest('.expense-item-row')) {
+                this.closeExpensePopup();
+            }
+        }
+    }
+
+    /**
+     * Closes the expense edit popup
+     */
+    private closeExpensePopup(): void {
+        if (this.popup.isOpen && this.popup.element) {
+            this.popup.element.remove();
+            this.popup.isOpen = false;
+            this.popup.expense = null;
+            this.popup.element = null;
+
+            // Remove click outside handler
+            document.removeEventListener('click', this.handleClickOutside.bind(this));
+        }
+    }
+
+    /**
+     * Changes the category of an expense
+     * @param expense The expense to change
+     * @param currentEntry The data entry containing the expense
+     * @param newCategory The new category to assign
+     * @param newCategoryKey New keyword to add to category configuration
+     */
+    private changeExpenseCategory(
+        expense: ExpenseItem,
+        currentEntry: DataEntry,
+        newCategory: string,
+        newCategoryKey: string
+    ): void {
+        // For now, just log the change - in a real implementation, this would save to the file
+        console.log(`Changed expense category from ${this.popup.originalCategory} to ${newCategory}:`, expense);
+
+        if (newCategoryKey && newCategoryKey.trim() !== '') {
+            console.log(`Adding new category key "${newCategoryKey}" for category "${newCategory}"`);
+            // Here you would update the category configuration file to add the new key
+            // This would involve parsing the file, adding the key, and writing it back
+        }
+
+        // Here you would update the DataEntry or save changes back to the file
+        // This would likely involve a call to an API or file system
     }
 
     /**
@@ -1393,6 +1721,9 @@ export class MonthlyView {
 
             // Add click event to show category details
             barWrapper.addEventListener('click', () => {
+                // Close any open popup first
+                this.closeExpensePopup();
+
                 // Find the DataEntry for this category
                 const entry = dataEntries.find(entry =>
                     entry.category === category &&
@@ -1402,9 +1733,30 @@ export class MonthlyView {
 
                 // Show details for this category using the expenses array from the DataEntry
                 if (entry && entry.expenses) {
-                    this.showCategoryDetails(category, amount, detailsContainer, entry.expenses);
+                    this.showCategoryDetails(
+                        category,
+                        amount,
+                        detailsContainer,
+                        entry.expenses,
+                        dataEntries,
+                        entry
+                    );
                 } else {
-                    this.showCategoryDetails(category, amount, detailsContainer, []);
+                    this.showCategoryDetails(
+                        category,
+                        amount,
+                        detailsContainer,
+                        [],
+                        dataEntries,
+                        entry || {
+                            category,
+                            month: month.toString(),
+                            year: year.toString(),
+                            monthyear: `${month}/${year}`,
+                            amount,
+                            expenses: []
+                        }
+                    );
                 }
 
                 // Highlight the selected bar
