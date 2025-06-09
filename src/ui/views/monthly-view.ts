@@ -2,6 +2,7 @@ import { Component } from 'obsidian';
 import { DataviewApi } from '../../api/plugin-api';
 import { STask } from 'data-model/serialized/markdown';
 import { TaggedFile } from '../../api/inline-field-search';
+import { MonthlyTaskApi } from '../../api/monthly-task-search';
 
 interface TaskStatistic {
     name: string;
@@ -14,6 +15,7 @@ interface TaskStatistic {
 
 export class MonthlyView {
     private dv: DataviewApi;
+    private monthlyTaskApi: MonthlyTaskApi;
     private chartColors = [
         '#FF6B6B', '#FF9E7A', '#FFBF86', '#FFE66D',
         '#8AFF80', '#80FFEA', '#80D8FF', '#9580FF',
@@ -22,6 +24,7 @@ export class MonthlyView {
 
     constructor(dv: DataviewApi) {
         this.dv = dv;
+        this.monthlyTaskApi = new MonthlyTaskApi(dv);
     }
 
     /**
@@ -74,16 +77,16 @@ export class MonthlyView {
 
         try {
             // Parse the month and year from the filename
-            console.log("🐞 filename check", filename);
             const [yearStr, monthName] = filename.split('-');
             const year = parseInt(yearStr);
+            const monthIndex = this.getMonthIndex(monthName);
 
-            if (isNaN(year) || !monthName) {
+            if (isNaN(year) || monthIndex === -1) {
                 throw new Error('Invalid filename format. Expected YYYY-Month.');
             }
 
-            // Find all tasks for the month
-            const tasks = await this.getTasksForMonth(year, monthName, component);
+            // Get tasks using the MonthlyTaskApi
+            const tasks = this.monthlyTaskApi.searchMonthlyTasks('"game/objectives"', filename);
 
             if (tasks.length === 0) {
                 const noTasks = statsContainer.createEl('div');
@@ -156,34 +159,6 @@ export class MonthlyView {
         }
     }
 
-    /**
-     * Gets all tasks for the specified month
-     * @param year The year
-     * @param monthName The month name
-     * @param component The component to use for rendering
-     * @returns An array of tasks
-     */
-    private async getTasksForMonth(
-        year: number,
-        monthName: string,
-        component: Component
-    ): Promise<STask[]> {
-        try {
-            // Convert month name to month index (0-11)
-            const monthIndex = this.getMonthIndex(monthName);
-            if (monthIndex === -1) {
-                throw new Error(`Invalid month name: ${monthName}`);
-            }
-
-            // For now, we'll return an empty array
-            // In a real implementation, you would query tasks for the month
-            // This needs to be implemented in the API
-            return [];
-        } catch (e) {
-            console.error('Error getting tasks for month:', e);
-            return [];
-        }
-    }
 
     /**
      * Creates a pie chart visualizing task statistics
@@ -408,6 +383,59 @@ export class MonthlyView {
                 taskCount.innerHTML = `<span style="color: #50C878;">${obj.done}</span>/<span style="color: #FF6B6B;">${total}</span>`;
             }
         }
+
+        // Add filename labels inside segments to help identify them in the chart
+        startAngle = 0;
+        objectives.forEach((obj) => {
+            const segmentSize = ((obj.todo + obj.done) / totalTasks) * 100;
+            if (segmentSize < 8) {
+                startAngle += segmentSize;
+                return; // Skip very small segments
+            }
+
+            const endAngle = startAngle + segmentSize;
+            const midAngle = startAngle + (segmentSize / 2);
+
+            // Create a container for the segment text that will be rotated to align with the segment
+            const segmentTextContainer = chartContainer.createEl('div');
+            segmentTextContainer.setAttribute('style', `
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                width: 120px;
+                height: 50px;
+                transform-origin: left center;
+                transform: translate(0, -50%) rotate(${midAngle / 100 * 360}deg);
+                z-index: 3;
+                pointer-events: none;
+            `);
+
+            // Calculate the segment width at different distances from center
+            const segmentWidthDegrees = segmentSize / 100 * 360;
+            // Only create radial text if segment is wide enough
+            if (segmentWidthDegrees >= 20) {
+                // Create the filename element
+                const filenameEl = segmentTextContainer.createEl('div');
+                filenameEl.setAttribute('style', `
+                    position: absolute;
+                    top: 0;
+                    left: 60px;
+                    transform: rotate(-${midAngle / 100 * 360}deg);
+                    color: #fff;
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+                    text-align: left;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    max-width: 80px;
+                `);
+                filenameEl.textContent = obj.name.substring(0, 12) + (obj.name.length > 12 ? '...' : '');
+            }
+
+            startAngle = endAngle;
+        });
     }
 
     /**
