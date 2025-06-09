@@ -895,69 +895,6 @@ export class MonthlyView {
                     });
                 }
 
-                // Try to extract highlights from the file content
-                try {
-                    // Get the TFile from the path and read it
-                    const tfile = this.dv.app.vault.getAbstractFileByPath(file.path);
-                    if (!tfile) {
-                        console.error(`File not found: ${file.path}`);
-                        continue;
-                    }
-
-                    // Read the file content
-                    const fileContent = await this.dv.app.vault.cachedRead(tfile as any);
-                    const highlights = this.dv.fieldSearch.extractHighlightsFromContent(fileContent);
-
-                    if (highlights.length > 0) {
-                        // Create highlights list
-                        const highlightsList = fileContainer.createEl('ul');
-                        highlightsList.setAttribute('style', `
-                            margin: 0;
-                            padding-left: 14px;
-                            list-style-type: none;
-                        `);
-
-                        highlights.forEach(highlight => {
-                            const highlightItem = highlightsList.createEl('li');
-                            highlightItem.setAttribute('style', `
-                                position: relative;
-                                padding-left: 10px;
-                                margin-bottom: 4px;
-                                line-height: 1.2;
-                                color: #334155;
-                                font-size: 0.85em;
-                            `);
-
-                            // Add quote marker
-                            highlightItem.createEl('span', {
-                                text: '❝',
-                                attr: {
-                                    style: `
-                                        position: absolute;
-                                        left: -4px;
-                                        top: -2px;
-                                        color: ${color};
-                                        font-size: 1em;
-                                    `
-                                }
-                            });
-
-                            highlightItem.createEl('span', { text: highlight });
-                        });
-                    } else {
-                        // No highlights found
-                        const noHighlights = fileContainer.createEl('div');
-                        noHighlights.textContent = 'No highlights found.';
-                        noHighlights.setAttribute('style', `
-                            font-style: italic;
-                            color: #94a3b8;
-                            font-size: 0.75em;
-                            margin-top: 2px;
-                        `);
-                    }
-                } catch (e) {
-                    console.error(`Error reading file ${file.path}:`, e);
-                }
             }
         }
     }

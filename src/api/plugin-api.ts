@@ -112,7 +112,7 @@ export class DataviewApi {
         this.weekly = new WeeklyTaskApi(this);
         this.weeklyTag = new WeeklyTagApi(this);
         this.monthlyView = new MonthlyView(this);
-        this.fieldSearch = new InlineFieldSearch(app);
+        this.fieldSearch = new InlineFieldSearch(app, this);
     }
 
     /** Utilities to check the current Dataview version and compare it to SemVer version ranges. */
