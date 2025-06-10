@@ -1,19 +1,11 @@
 import { App, TFile } from 'obsidian';
+import { ExpenseConfigManager } from './expense-config';
 
 export interface ExpenseItem {
     date: string;
     description: string;
     amount: number;
     rawText?: string;
-}
-
-export interface Category {
-    name: string;
-    places: string[];
-}
-
-export interface CategoryConfig {
-    categories: Category[];
 }
 
 export interface DataEntry {
@@ -27,11 +19,12 @@ export interface DataEntry {
 
 export class ExpenseAnalyzer {
     private app: App;
-    private categoryConfig: CategoryConfig | null = null;
+    private configManager: ExpenseConfigManager;
     private analyzeOther: boolean = true;
 
     constructor(app: App) {
         this.app = app;
+        this.configManager = new ExpenseConfigManager(app);
     }
 
     /**
@@ -41,12 +34,9 @@ export class ExpenseAnalyzer {
      * @returns Promise<DataEntry[]> Sorted expense data entries
      */
     async analyzeExpenses(monthFileName: string, configFilePath: string): Promise<DataEntry[]> {
-        // Load category configuration
-        await this.loadCategoryConfig(configFilePath);
-
-        if (!this.categoryConfig) {
-            throw new Error('Failed to load category configuration');
-        }
+        // Set the config file path and load configuration
+        this.configManager.setConfigPath(configFilePath);
+        await this.configManager.loadConfig();
 
         // Load expense data
         const expenseData = await this.loadExpenseData(monthFileName);
@@ -59,54 +49,19 @@ export class ExpenseAnalyzer {
     }
 
     /**
-     * Loads category configuration from a file
-     * @param configFilePath Path to the config file
+     * Set the config manager to use
+     * @param configManager The ExpenseConfigManager to use
      */
-    private async loadCategoryConfig(configFilePath: string): Promise<void> {
-        const configFile = this.app.vault.getAbstractFileByPath(configFilePath);
+    setConfigManager(configManager: ExpenseConfigManager): void {
+        this.configManager = configManager;
+    }
 
-        if (configFile instanceof TFile) {
-            const fileContent = await this.app.vault.read(configFile);
-
-            // Parse frontmatter to get categories
-            const frontmatterMatch = fileContent.match(/^---\n([\s\S]*?)\n---/);
-
-            if (frontmatterMatch && frontmatterMatch[1]) {
-                const frontmatter = frontmatterMatch[1];
-
-                // Parse YAML-like structure (basic implementation)
-                const categories: Category[] = [];
-                let currentCategory: Category | null = null;
-
-                frontmatter.split('\n').forEach(line => {
-                    const trimmedLine = line.trim();
-
-                    if (trimmedLine.startsWith('categories:')) {
-                        // Start of categories section
-                    } else if (trimmedLine.startsWith('- name:')) {
-                        // New category
-                        if (currentCategory) {
-                            categories.push(currentCategory);
-                        }
-
-                        currentCategory = {
-                            name: trimmedLine.substring(7).trim(),
-                            places: []
-                        };
-                    } else if (trimmedLine.startsWith('- ') && currentCategory) {
-                        // Place within a category
-                        currentCategory.places.push(trimmedLine.substring(2).trim());
-                    }
-                });
-
-                // Add the last category
-                if (currentCategory) {
-                    categories.push(currentCategory);
-                }
-
-                this.categoryConfig = { categories };
-            }
-        }
+    /**
+     * Get the current config manager
+     * @returns The current ExpenseConfigManager
+     */
+    getConfigManager(): ExpenseConfigManager {
+        return this.configManager;
     }
 
     /**
@@ -186,7 +141,7 @@ export class ExpenseAnalyzer {
                     return;
                 }
 
-                // Get category for this shop
+                // Get category for this shop using the config manager
                 const category = this.getCategory(shop, amount);
 
                 const monthYear = `${month}/${year}`;
@@ -232,19 +187,7 @@ export class ExpenseAnalyzer {
      * @returns The category name
      */
     private getCategory(purchaseName: string, amount: number): string {
-        if (!this.categoryConfig) {
-            return this.analyzeOther ? purchaseName : "OTHER";
-        }
-
-        for (const category of this.categoryConfig.categories) {
-            for (const place of category.places) {
-                if (purchaseName.toLowerCase().includes(place.toLowerCase())) {
-                    return category.name;
-                }
-            }
-        }
-
-        return this.analyzeOther ? purchaseName : "OTHER";
+        return this.configManager.getCategoryForPurchase(purchaseName, amount, this.analyzeOther);
     }
 
     /**
@@ -320,5 +263,15 @@ export class ExpenseAnalyzer {
         });
 
         return output;
+    }
+
+    /**
+     * Add a new category keyword
+     * @param categoryName Category to add the keyword to
+     * @param keyword The keyword to add
+     * @returns Promise resolving to boolean indicating success
+     */
+    async addCategoryKeyword(categoryName: string, keyword: string): Promise<boolean> {
+        return await this.configManager.addCategoryKeyword(categoryName, keyword);
     }
 } 
