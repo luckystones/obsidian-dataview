@@ -1398,23 +1398,20 @@ export class WeeklyView {
         const dashboardContainer = container.createEl('div');
         dashboardContainer.setAttribute('style', 'margin: 1em 0;');
 
-        // Create horizontal flex container for time and stats
-        const timeStatsContainer = dashboardContainer.createEl('div');
-        timeStatsContainer.setAttribute('style', 'display: flex; flex-direction: row; align-items: center; justify-content: space-around; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; min-height: 280px;');
-
-        // Render weekly time and stats side by side
-        await this.renderWeeklyTime(filename, timeStatsContainer, component);
-        await this.renderStats(tasks, filename, timeStatsContainer);
-
-        // Render tasks section
+        // Render tasks section first
         const tasksContainer = dashboardContainer.createEl('div');
         await this.renderWeeklyTasksAsTable(tasks, filename, component, tasksContainer);
 
         // Render reflections section
-        await this.renderReflections(filename, component, dashboardContainer);
+        const reflectionsContainer = await this.renderReflections(filename, component, dashboardContainer);
 
-        // Ensure styles are applied
-        // this.reloadStyles();
+        // Create horizontal flex container for time and stats inside reflections container
+        const timeStatsContainer = reflectionsContainer.createEl('div');
+        timeStatsContainer.setAttribute('style', 'display: flex; flex-direction: row; align-items: center; justify-content: space-around; gap: 20px; flex-wrap: wrap; margin-top: 30px; min-height: 280px;');
+
+        // Render weekly time and stats side by side inside the reflections container
+        await this.renderWeeklyTime(filename, timeStatsContainer, component);
+        await this.renderStats(tasks, filename, timeStatsContainer);
 
         return dashboardContainer;
     }
