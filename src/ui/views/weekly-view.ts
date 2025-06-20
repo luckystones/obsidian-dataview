@@ -42,10 +42,254 @@ export class WeeklyView {
         // Get dates for the week
         const dates = this.getDatesForWeek(filename);
 
-        this.renderWeekdaysTable(tasks, dates, weeklyContainer, component, filename);
-        this.renderWeekendTable(tasks, dates, weeklyContainer, component, filename);
+        // Create filter container
+        const filterContainer = weeklyContainer.createEl('div');
+        filterContainer.setAttribute('style', `
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+            padding: 8px;
+            background: rgba(22, 33, 51, 0.03);
+            border-radius: 6px;
+        `);
+
+        // Add filter title
+        const filterTitle = filterContainer.createEl('div');
+        filterTitle.textContent = 'Filter by:';
+        filterTitle.setAttribute('style', `
+            font-weight: 600;
+            color: #64748b;
+            margin-right: 8px;
+            display: flex;
+            align-items: center;
+        `);
+
+        // Collect unique filenames from tasks and count tasks
+        const uniqueFiles = new Set<string>();
+        let allTasksCount = 0;
+
+        Object.values(tasks).forEach(dayTasks => {
+            dayTasks.forEach((task: STask) => {
+                const baseFilename = task.path.split('/').pop() || 'Unknown';
+                uniqueFiles.add(baseFilename);
+                allTasksCount++;
+            });
+        });
+
+        // Keep track of currently filtered tasks
+        let filteredTasks = tasks;
+
+        // Create "All" filter button
+        this.createFilterButton(filterContainer, 'All', allTasksCount, true, () => {
+            // Reset to show all tasks
+            filteredTasks = tasks;
+
+            // Re-render tables with all tasks
+            this.renderFilteredTables(filteredTasks, dates, weeklyContainer, component, filename);
+        });
+
+        // Create filter buttons for each unique filename
+        uniqueFiles.forEach(baseFilename => {
+            // Count tasks for this file
+            let fileTaskCount = 0;
+            Object.values(tasks).forEach(dayTasks => {
+                dayTasks.forEach((task: STask) => {
+                    if ((task.path.split('/').pop() || 'Unknown') === baseFilename) {
+                        fileTaskCount++;
+                    }
+                });
+            });
+
+            // Create button for this file
+            this.createFilterButton(filterContainer, baseFilename, fileTaskCount, false, () => {
+                // Filter tasks by this filename
+                filteredTasks = this.filterTasksByFilename(tasks, baseFilename);
+
+                // Re-render tables with filtered tasks
+                this.renderFilteredTables(filteredTasks, dates, weeklyContainer, component, filename);
+            });
+        });
+
+        // Initial render with all tasks
+        this.renderFilteredTables(filteredTasks, dates, weeklyContainer, component, filename);
 
         return weeklyContainer;
+    }
+
+    /**
+     * Filters tasks by filename
+     */
+    private filterTasksByFilename(tasks: WeeklyTaskGroup, filename: string): WeeklyTaskGroup {
+        const filteredTasks: WeeklyTaskGroup = {
+            Monday: [],
+            Tuesday: [],
+            Wednesday: [],
+            Thursday: [],
+            Friday: [],
+            Saturday: [],
+            Sunday: []
+        };
+
+        Object.entries(tasks).forEach(([day, dayTasks]) => {
+            filteredTasks[day as DayOfWeek] = dayTasks.filter((task: STask) => {
+                const baseFilename = task.path.split('/').pop() || 'Unknown';
+                return baseFilename === filename;
+            });
+        });
+
+        return filteredTasks;
+    }
+
+    /**
+     * Renders tables with filtered tasks
+     */
+    private renderFilteredTables(
+        tasks: WeeklyTaskGroup,
+        dates: Record<DayOfWeek, Date>,
+        container: HTMLElement,
+        component: Component,
+        filename: string
+    ): void {
+        // Clear previous tables
+        const existingWeekdaysTable = container.querySelector('.weekdays-table');
+        if (existingWeekdaysTable) {
+            existingWeekdaysTable.remove();
+        }
+
+        const existingWeekendTable = container.querySelector('.weekend-table');
+        if (existingWeekendTable) {
+            existingWeekendTable.remove();
+        }
+
+        // Create containers for the new tables
+        const weekdaysContainer = container.createEl('div');
+        weekdaysContainer.classList.add('weekdays-table');
+
+        const weekendContainer = container.createEl('div');
+        weekendContainer.classList.add('weekend-table');
+
+        // Render the tables
+        this.renderWeekdaysTable(tasks, dates, weekdaysContainer, component, filename);
+        this.renderWeekendTable(tasks, dates, weekendContainer, component, filename);
+    }
+
+    /**
+     * Creates a filter button
+     */
+    private createFilterButton(
+        container: HTMLElement,
+        label: string,
+        count: number,
+        isActive: boolean,
+        clickHandler: () => void
+    ): HTMLElement {
+        const button = container.createEl('button');
+        button.setAttribute('style', `
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid ${isActive ? '#3b82f6' : 'rgba(30, 41, 59, 0.2)'};
+            background: ${isActive ? 'rgba(59, 130, 246, 0.1)' : 'white'};
+            color: ${isActive ? '#3b82f6' : '#64748b'};
+        `);
+
+        // Truncate long filenames
+        const displayLabel = label.length > 15 ? label.substring(0, 15) + '...' : label;
+        button.innerHTML = `
+            <span>${displayLabel}</span>
+            <span style="
+                background: ${isActive ? '#3b82f6' : 'rgba(30, 41, 59, 0.1)'};
+                color: ${isActive ? 'white' : '#64748b'};
+                border-radius: 10px;
+                padding: 1px 6px;
+                font-size: 10px;
+                min-width: 18px;
+                text-align: center;
+            ">${count}</span>
+        `;
+
+        // Add data attribute to identify the filter
+        button.dataset.filter = label;
+
+        // Add click handler
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+
+            // Update active state of all buttons
+            const allButtons = container.querySelectorAll('button');
+            allButtons.forEach(btn => {
+                btn.setAttribute('style', `
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 4px 10px;
+                    border-radius: 16px;
+                    font-size: 12px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    border: 1px solid rgba(30, 41, 59, 0.2);
+                    background: white;
+                    color: #64748b;
+                `);
+
+                // Update count badge style
+                const countBadge = btn.querySelector('span:last-child');
+                if (countBadge) {
+                    countBadge.setAttribute('style', `
+                        background: rgba(30, 41, 59, 0.1);
+                        color: #64748b;
+                        border-radius: 10px;
+                        padding: 1px 6px;
+                        font-size: 10px;
+                        min-width: 18px;
+                        text-align: center;
+                    `);
+                }
+            });
+
+            // Set this button as active
+            button.setAttribute('style', `
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                padding: 4px 10px;
+                border-radius: 16px;
+                font-size: 12px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                border: 1px solid #3b82f6;
+                background: rgba(59, 130, 246, 0.1);
+                color: #3b82f6;
+            `);
+
+            // Update count badge style for active button
+            const countBadge = button.querySelector('span:last-child');
+            if (countBadge) {
+                countBadge.setAttribute('style', `
+                    background: #3b82f6;
+                    color: white;
+                    border-radius: 10px;
+                    padding: 1px 6px;
+                    font-size: 10px;
+                    min-width: 18px;
+                    text-align: center;
+                `);
+            }
+
+            // Execute the click handler
+            clickHandler();
+        });
+
+        return button;
     }
 
     /**
