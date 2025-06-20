@@ -42,15 +42,8 @@ export class WeeklyView {
         // Get dates for the week
         const dates = this.getDatesForWeek(filename);
 
-
-        // Render weekdays section
-        const weekdays: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-        this.renderWeekdaysTable(tasks, dates, weekdays, weeklyContainer, component, filename);
-
-        // Render weekend section
-        const weekendDays: DayOfWeek[] = ['Saturday', 'Sunday'];
-        this.renderWeekendTable(tasks, dates, weekendDays, weeklyContainer, component, filename);
-        // Create statistics section
+        this.renderWeekdaysTable(tasks, dates, weeklyContainer, component, filename);
+        this.renderWeekendTable(tasks, dates, weeklyContainer, component, filename);
 
         return weeklyContainer;
     }
@@ -889,12 +882,12 @@ export class WeeklyView {
     private renderWeekdaysTable(
         tasks: WeeklyTaskGroup,
         dates: Record<DayOfWeek, Date>,
-        weekdays: DayOfWeek[],
         parentContainer: HTMLElement,
         component: Component,
         filename: string
     ): void {
         // Create weekdays table container
+        const weekdays: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
         const weekdaysContainer = parentContainer.createEl('div');
 
         // Create headers with dates
@@ -923,12 +916,12 @@ export class WeeklyView {
     private renderWeekendTable(
         tasks: WeeklyTaskGroup,
         dates: Record<DayOfWeek, Date>,
-        weekendDays: DayOfWeek[],
         parentContainer: HTMLElement,
         component: Component,
         filename: string
     ): void {
         // Create weekend table container
+        const weekendDays: DayOfWeek[] = ['Saturday', 'Sunday'];
         const weekendContainer = parentContainer.createEl('div');
 
         // Create headers with dates
