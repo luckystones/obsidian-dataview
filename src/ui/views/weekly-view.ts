@@ -77,11 +77,19 @@ export class WeeklyView {
             });
         });
 
+        // Create a map of filenames to colors from the chart colors
+        const fileColorMap: Record<string, string> = {};
+        let colorIndex = 0;
+        uniqueFiles.forEach(file => {
+            fileColorMap[file] = this.chartColors[colorIndex % this.chartColors.length];
+            colorIndex++;
+        });
+
         // Keep track of currently filtered tasks
         let filteredTasks = tasks;
 
         // Create "All" filter button
-        this.createFilterButton(filterContainer, 'All', allTasksCount, true, () => {
+        this.createFilterButton(filterContainer, 'All', allTasksCount, true, null, () => {
             // Reset to show all tasks
             filteredTasks = tasks;
 
@@ -101,8 +109,8 @@ export class WeeklyView {
                 });
             });
 
-            // Create button for this file
-            this.createFilterButton(filterContainer, baseFilename, fileTaskCount, false, () => {
+            // Create button for this file with its corresponding color
+            this.createFilterButton(filterContainer, baseFilename, fileTaskCount, false, fileColorMap[baseFilename], () => {
                 // Filter tasks by this filename
                 filteredTasks = this.filterTasksByFilename(tasks, baseFilename);
 
@@ -182,8 +190,16 @@ export class WeeklyView {
         label: string,
         count: number,
         isActive: boolean,
+        color: string | null,
         clickHandler: () => void
     ): HTMLElement {
+        // Default colors if no specific color provided
+        const defaultActiveColor = '#3b82f6';
+        const defaultInactiveColor = 'rgba(30, 41, 59, 0.2)';
+
+        // Use provided color or default
+        const buttonColor = color || defaultActiveColor;
+
         const button = container.createEl('button');
         button.setAttribute('style', `
             display: flex;
@@ -195,28 +211,54 @@ export class WeeklyView {
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s ease;
-            border: 1px solid ${isActive ? '#3b82f6' : 'rgba(30, 41, 59, 0.2)'};
-            background: ${isActive ? 'rgba(59, 130, 246, 0.1)' : 'white'};
-            color: ${isActive ? '#3b82f6' : '#64748b'};
+            border: 1px solid ${isActive ? buttonColor : defaultInactiveColor};
+            background: ${isActive ? `rgba(${this.hexToRgb(buttonColor)}, 0.1)` : 'white'};
+            color: ${isActive ? buttonColor : '#64748b'};
         `);
 
         // Truncate long filenames
         const displayLabel = label.length > 15 ? label.substring(0, 15) + '...' : label;
-        button.innerHTML = `
-            <span>${displayLabel}</span>
-            <span style="
-                background: ${isActive ? '#3b82f6' : 'rgba(30, 41, 59, 0.1)'};
-                color: ${isActive ? 'white' : '#64748b'};
-                border-radius: 10px;
-                padding: 1px 6px;
-                font-size: 10px;
-                min-width: 18px;
-                text-align: center;
-            ">${count}</span>
-        `;
+
+        // Create button content with proper structure
+        button.innerHTML = '';  // Clear any existing content
+
+        // Add color indicator if this is not the "All" button and not active
+        if (label !== 'All' && color && !isActive) {
+            const colorIndicator = document.createElement('span');
+            colorIndicator.classList.add('color-indicator');
+            colorIndicator.setAttribute('style', `
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background-color: ${color};
+                margin-right: 4px;
+            `);
+            button.appendChild(colorIndicator);
+        }
+
+        // Create label span
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = displayLabel;
+        button.appendChild(labelSpan);
+
+        // Create count badge with appropriate color
+        const countBadge = document.createElement('span');
+        countBadge.textContent = count.toString();
+        countBadge.setAttribute('style', `
+            background: ${isActive ? buttonColor : 'rgba(30, 41, 59, 0.1)'};
+            color: ${isActive ? 'white' : '#64748b'};
+            border-radius: 10px;
+            padding: 1px 6px;
+            font-size: 10px;
+            min-width: 18px;
+            text-align: center;
+        `);
+        button.appendChild(countBadge);
 
         // Add data attribute to identify the filter
         button.dataset.filter = label;
+        button.dataset.color = color || defaultActiveColor;
 
         // Add click handler
         button.addEventListener('click', (e) => {
@@ -225,6 +267,8 @@ export class WeeklyView {
             // Update active state of all buttons
             const allButtons = container.querySelectorAll('button');
             allButtons.forEach(btn => {
+
+                // Reset button style
                 btn.setAttribute('style', `
                     display: flex;
                     align-items: center;
@@ -240,19 +284,50 @@ export class WeeklyView {
                     color: #64748b;
                 `);
 
-                // Update count badge style
-                const countBadge = btn.querySelector('span:last-child');
-                if (countBadge) {
-                    countBadge.setAttribute('style', `
-                        background: rgba(30, 41, 59, 0.1);
-                        color: #64748b;
-                        border-radius: 10px;
-                        padding: 1px 6px;
-                        font-size: 10px;
-                        min-width: 18px;
-                        text-align: center;
+                // Clear button content and rebuild it
+                btn.innerHTML = '';
+
+                // Get filter name from data attribute
+                const filterName = btn.dataset.filter || '';
+                const btnColorValue = btn.dataset.color || defaultActiveColor;
+
+                // Add color indicator if this is not the "All" button
+                if (filterName !== 'All' && btnColorValue) {
+                    const colorIndicator = document.createElement('span');
+                    colorIndicator.classList.add('color-indicator');
+                    colorIndicator.setAttribute('style', `
+                        display: inline-block;
+                        width: 8px;
+                        height: 8px;
+                        border-radius: 50%;
+                        background-color: ${btnColorValue};
+                        margin-right: 4px;
                     `);
+                    btn.appendChild(colorIndicator);
                 }
+
+                // Add label (truncated if needed)
+                const displayText = filterName.length > 15 ? filterName.substring(0, 15) + '...' : filterName;
+                const labelSpan = document.createElement('span');
+                labelSpan.textContent = displayText;
+                btn.appendChild(labelSpan);
+
+                // Get count from badge
+                const countValue = parseInt(btn.dataset.count || '0');
+
+                // Add count badge
+                const countBadge = document.createElement('span');
+                countBadge.textContent = countValue.toString();
+                countBadge.setAttribute('style', `
+                    background: rgba(30, 41, 59, 0.1);
+                    color: #64748b;
+                    border-radius: 10px;
+                    padding: 1px 6px;
+                    font-size: 10px;
+                    min-width: 18px;
+                    text-align: center;
+                `);
+                btn.appendChild(countBadge);
             });
 
             // Set this button as active
@@ -266,28 +341,41 @@ export class WeeklyView {
                 font-weight: 500;
                 cursor: pointer;
                 transition: all 0.2s ease;
-                border: 1px solid #3b82f6;
-                background: rgba(59, 130, 246, 0.1);
-                color: #3b82f6;
+                border: 1px solid ${buttonColor};
+                background: rgba(${this.hexToRgb(buttonColor)}, 0.1);
+                color: ${buttonColor};
             `);
 
-            // Update count badge style for active button
-            const countBadge = button.querySelector('span:last-child');
-            if (countBadge) {
-                countBadge.setAttribute('style', `
-                    background: #3b82f6;
-                    color: white;
-                    border-radius: 10px;
-                    padding: 1px 6px;
-                    font-size: 10px;
-                    min-width: 18px;
-                    text-align: center;
-                `);
-            }
+            // Clear button content and rebuild it for active state
+            button.innerHTML = '';
+
+            // For active buttons, don't add color indicator
+
+            // Add label
+            const activeLabelSpan = document.createElement('span');
+            activeLabelSpan.textContent = displayLabel;
+            button.appendChild(activeLabelSpan);
+
+            // Add count badge for active button
+            const activeCountBadge = document.createElement('span');
+            activeCountBadge.textContent = count.toString();
+            activeCountBadge.setAttribute('style', `
+                background: ${buttonColor};
+                color: white;
+                border-radius: 10px;
+                padding: 1px 6px;
+                font-size: 10px;
+                min-width: 18px;
+                text-align: center;
+            `);
+            button.appendChild(activeCountBadge);
 
             // Execute the click handler
             clickHandler();
         });
+
+        // Store count in data attribute for later use
+        button.dataset.count = count.toString();
 
         return button;
     }
@@ -1408,8 +1496,8 @@ export class WeeklyView {
         timeStatsContainer.setAttribute('style', 'display: flex; flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; min-height: 280px;');
 
         // Render weekly time and stats side by side
-        await this.renderStats(tasks, filename, timeStatsContainer);
         await this.renderWeeklyTime(filename, timeStatsContainer, component);
+        await this.renderStats(tasks, filename, timeStatsContainer);
 
         // Render tasks section
         const tasksContainer = dashboardContainer.createEl('div');
