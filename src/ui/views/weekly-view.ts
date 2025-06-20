@@ -43,8 +43,31 @@ export class WeeklyView {
         // Get dates for the week
         const dates = this.getDatesForWeek(filename);
 
+        // Keep track of currently filtered tasks
+        let filteredTasks = tasks;
+
+        // Create filters for tasks
+        this.createTaskFilters(weeklyContainer, tasks, (filtered) => {
+            filteredTasks = filtered;
+            this.renderFilteredTables(filteredTasks, dates, weeklyContainer, component, filename);
+        });
+
+        // Initial render with all tasks
+        this.renderFilteredTables(filteredTasks, dates, weeklyContainer, component, filename);
+
+        return weeklyContainer;
+    }
+
+    /**
+     * Creates filter buttons for tasks
+     */
+    private createTaskFilters(
+        parentContainer: HTMLElement,
+        tasks: WeeklyTaskGroup,
+        onFilterChange: (filteredTasks: WeeklyTaskGroup) => void
+    ): void {
         // Create filter container
-        const filterContainer = weeklyContainer.createEl('div');
+        const filterContainer = parentContainer.createEl('div');
         filterContainer.setAttribute('style', `
             display: flex;
             flex-wrap: wrap;
@@ -86,16 +109,10 @@ export class WeeklyView {
             colorIndex++;
         });
 
-        // Keep track of currently filtered tasks
-        let filteredTasks = tasks;
-
         // Create "All" filter button
         this.createFilterButton(filterContainer, 'All', allTasksCount, true, null, () => {
             // Reset to show all tasks
-            filteredTasks = tasks;
-
-            // Re-render tables with all tasks
-            this.renderFilteredTables(filteredTasks, dates, weeklyContainer, component, filename);
+            onFilterChange(tasks);
         });
 
         // Create filter buttons for each unique filename
@@ -113,17 +130,10 @@ export class WeeklyView {
             // Create button for this file with its corresponding color
             this.createFilterButton(filterContainer, baseFilename, fileTaskCount, false, fileColorMap[baseFilename], () => {
                 // Filter tasks by this filename
-                filteredTasks = this.filterTasksByFilename(tasks, baseFilename);
-
-                // Re-render tables with filtered tasks
-                this.renderFilteredTables(filteredTasks, dates, weeklyContainer, component, filename);
+                const filteredTasks = this.filterTasksByFilename(tasks, baseFilename);
+                onFilterChange(filteredTasks);
             });
         });
-
-        // Initial render with all tasks
-        this.renderFilteredTables(filteredTasks, dates, weeklyContainer, component, filename);
-
-        return weeklyContainer;
     }
 
     /**
@@ -780,7 +790,7 @@ export class WeeklyView {
 
         // Create chart container
         const chartContainer = flexContainer.createEl('div');
-        chartContainer.setAttribute('style', 'width: 280px; height: 280px; position: relative;');
+        chartContainer.setAttribute('style', 'width: 280px; height: 280px; position: relative; display: flex; justify-content: center; align-items: center;');
 
         // Create summary container - modified to stretch horizontally
         const summaryContainer = flexContainer.createEl('div');
@@ -809,8 +819,6 @@ export class WeeklyView {
         const pieChart = chartContainer.createEl('div');
         pieChart.setAttribute('style', `
             position: absolute;
-            top: 20px;
-            left: 20px;
             width: 240px;
             height: 240px;
             border-radius: 50%;
@@ -826,8 +834,8 @@ export class WeeklyView {
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 100px;
-            height: 100px;
+            width: 120px;
+            height: 120px;
             border-radius: 50%;
             background: rgba(22, 33, 51, 0.95);
             display: flex;
@@ -1058,9 +1066,8 @@ export class WeeklyView {
         component: Component
     ): HTMLElement {
         // Create a container for the age indicators
-        console.log("🐞🐞🐞 calling age indicator")
         const timeContainer = container.createEl('div');
-        timeContainer.setAttribute('style', 'width: 260px; height: 260px; position: relative;');
+        timeContainer.setAttribute('style', 'width: 280px; height: 280px; position: relative; display: flex; justify-content: center; align-items: center;');
 
         // Get the last day of the week from the filename
         const lastDay = this.getLastDayOfWeek(filename);
@@ -1084,10 +1091,8 @@ export class WeeklyView {
         const weeksCircle = timeContainer.createEl('div');
         weeksCircle.setAttribute('style', `
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 260px;
-            height: 260px;
+            width: 240px;
+            height: 240px;
             border-radius: 50%;
             background: conic-gradient(
                 #50C878 0deg, 
@@ -1098,14 +1103,14 @@ export class WeeklyView {
             display: flex;
             justify-content: center;
             align-items: center;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
         `);
 
         // Create the middle days circle
         const daysCircle = weeksCircle.createEl('div');
         daysCircle.setAttribute('style', `
-            width: 200px;
-            height: 200px;
+            width: 180px;
+            height: 180px;
             border-radius: 50%;
             background: conic-gradient(
                 #FF6B6B 0deg, 
@@ -1122,8 +1127,8 @@ export class WeeklyView {
         // Create the inner age circle
         const ageCircle = daysCircle.createEl('div');
         ageCircle.setAttribute('style', `
-            width: 140px;
-            height: 140px;
+            width: 120px;
+            height: 120px;
             border-radius: 50%;
             background: rgba(22, 33, 51, 0.95);
             color: #f8fafc;
@@ -1141,7 +1146,7 @@ export class WeeklyView {
         const ageDisplay = ageCircle.createEl('div');
         ageDisplay.textContent = ageNumber.toString();
         ageDisplay.setAttribute('style', `
-            font-size: 42px;
+            font-size: 38px;
             font-weight: 700;
             line-height: 1;
             background: linear-gradient(90deg, #60A5FA, #818CF8);
@@ -1165,14 +1170,14 @@ export class WeeklyView {
             left: 50%;
             background-color: rgba(22, 33, 51, 0.95);
             color: #f8fafc;
-            padding: 6px 10px;
-            border-radius: 20px;
-            font-size: 14px;
+            padding: 5px 8px;
+            border-radius: 16px;
+            font-size: 12px;
             display: flex;
             align-items: center;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2);
             z-index: 3;
-            transform: translate(-50%, -50%) rotate(${daysIndicatorAngle}deg) translate(100px) rotate(-${daysIndicatorAngle}deg);
+            transform: translate(-50%, -50%) rotate(${daysIndicatorAngle}deg) translate(90px) rotate(-${daysIndicatorAngle}deg);
         `);
 
         const dayText = daysIndicator.createEl('div');
@@ -1187,14 +1192,14 @@ export class WeeklyView {
             left: 50%;
             background-color: rgba(22, 33, 51, 0.95);
             color: #f8fafc;
-            padding: 6px 10px;
-            border-radius: 20px;
-            font-size: 14px;
+            padding: 5px 8px;
+            border-radius: 16px;
+            font-size: 12px;
             display: flex;
             align-items: center;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2);
             z-index: 3;
-            transform: translate(-50%, -50%) rotate(${weeksIndicatorAngle}deg) translate(130px) rotate(-${weeksIndicatorAngle}deg);
+            transform: translate(-50%, -50%) rotate(${weeksIndicatorAngle}deg) translate(120px) rotate(-${weeksIndicatorAngle}deg);
         `);
 
         const weekText = weeksIndicator.createEl('div');
@@ -1395,7 +1400,7 @@ export class WeeklyView {
 
         // Create horizontal flex container for time and stats
         const timeStatsContainer = dashboardContainer.createEl('div');
-        timeStatsContainer.setAttribute('style', 'display: flex; flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; min-height: 280px;');
+        timeStatsContainer.setAttribute('style', 'display: flex; flex-direction: row; align-items: center; justify-content: space-around; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; min-height: 280px;');
 
         // Render weekly time and stats side by side
         await this.renderWeeklyTime(filename, timeStatsContainer, component);
