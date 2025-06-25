@@ -311,38 +311,6 @@ function TaskItem({ item }: { item: STask }) {
                 });
         });
 
-        // FUTURE OPTIONS - Move forward in time
-
-        // 1 day later (tomorrow)
-        menu.addItem((item) => {
-            item.setTitle("1 day later (tomorrow)")
-                .onClick(() => scheduleTask(context.app.vault, 1));
-        });
-
-        // 3 days later
-        menu.addItem((item) => {
-            item.setTitle("3 days later")
-                .onClick(() => scheduleTask(context.app.vault, 3));
-        });
-
-        // 1 week later
-        menu.addItem((item) => {
-            item.setTitle("1 week later")
-                .onClick(() => scheduleTask(context.app.vault, 7));
-        });
-
-        // 2 weeks later
-        menu.addItem((item) => {
-            item.setTitle("2 weeks later")
-                .onClick(() => scheduleTask(context.app.vault, 14));
-        });
-
-        // 1 month later
-        menu.addItem((item) => {
-            item.setTitle("1 month later")
-                .onClick(() => scheduleTask(context.app.vault, 30));
-        });
-
         // TODAY
         menu.addItem((item) => {
             item.setTitle("Today")
@@ -351,41 +319,72 @@ function TaskItem({ item }: { item: STask }) {
                     scheduleTask(context.app.vault, 0, today);
                 });
         });
+        // FUTURE OPTIONS - Move forward in time
+
+        // 1 day later (tomorrow)
+        menu.addItem((item) => {
+            item.setTitle("+1")
+                .onClick(() => scheduleTask(context.app.vault, 1));
+        });
+
+        // 3 days later
+        menu.addItem((item) => {
+            item.setTitle("+3")
+                .onClick(() => scheduleTask(context.app.vault, 3));
+        });
+
+        // 1 week later
+        menu.addItem((item) => {
+            item.setTitle("+7")
+                .onClick(() => scheduleTask(context.app.vault, 7));
+        });
+
+        // 2 weeks later
+        menu.addItem((item) => {
+            item.setTitle("+14")
+                .onClick(() => scheduleTask(context.app.vault, 14));
+        });
+
+        // 1 month later
+        menu.addItem((item) => {
+            item.setTitle("+30")
+                .onClick(() => scheduleTask(context.app.vault, 30));
+        });
+
 
         // Separator
         menu.addSeparator();
-
+        // 1 day earlier (yesterday)
+        menu.addItem((item) => {
+            item.setTitle("-1")
+                .onClick(() => scheduleTask(context.app.vault, -1));
+        });
         // PAST OPTIONS - Move backwards in time
 
-        // 1 month earlier
+        // 3 days earlier
         menu.addItem((item) => {
-            item.setTitle("1 month earlier")
-                .onClick(() => scheduleTask(context.app.vault, -30));
+            item.setTitle("-3")
+                .onClick(() => scheduleTask(context.app.vault, -3));
+        });
+        // 1 week earlier
+        menu.addItem((item) => {
+            item.setTitle("-7")
+                .onClick(() => scheduleTask(context.app.vault, -7));
         });
 
         // 2 weeks earlier
         menu.addItem((item) => {
-            item.setTitle("2 weeks earlier")
+            item.setTitle("-14")
                 .onClick(() => scheduleTask(context.app.vault, -14));
         });
 
-        // 1 week earlier
+        // 1 month earlier
         menu.addItem((item) => {
-            item.setTitle("1 week earlier")
-                .onClick(() => scheduleTask(context.app.vault, -7));
+            item.setTitle("-30")
+                .onClick(() => scheduleTask(context.app.vault, -30));
         });
 
-        // 3 days earlier
-        menu.addItem((item) => {
-            item.setTitle("3 days earlier")
-                .onClick(() => scheduleTask(context.app.vault, -3));
-        });
 
-        // 1 day earlier (yesterday)
-        menu.addItem((item) => {
-            item.setTitle("1 day earlier (yesterday)")
-                .onClick(() => scheduleTask(context.app.vault, -1));
-        });
 
         // Show the menu
         menu.showAtMouseEvent(evt);
