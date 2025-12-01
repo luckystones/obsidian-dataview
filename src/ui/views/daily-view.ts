@@ -1,6 +1,8 @@
 import { STask } from 'data-model/serialized/markdown';
 import { Component } from 'obsidian';
 import { DataviewApi } from '../../api/plugin-api';
+import { PhysicalActivityTracker } from '../widgets/PhysicalActivityTracker';
+import { DateTime } from 'luxon';
 
 export class DailyView {
     private dv: DataviewApi;
@@ -28,6 +30,16 @@ export class DailyView {
         const dailyContainer = container.createEl('div');
         dailyContainer.setAttribute('style', 'margin: 1em 0; padding: 10px; border-radius: 6px;');
 
+        // Parse date from filename and render physical activity tracker
+        const currentDate = this.parseDateFromFilename(filename);
+        if (currentDate) {
+            // Use a start date for tracking (you can customize this)
+            // For now, using January 1, 2025 as the default start date
+            const startDate = DateTime.fromObject({ year: 2025, month: 11, day: 25 });
+            const tracker = new PhysicalActivityTracker(this.dv.app, 'physical-activity-tracker.csv', startDate);
+            await tracker.renderTracker(dailyContainer, currentDate);
+        }
+
         // Keep track of currently filtered tasks
         let filteredTasks = tasks;
 
@@ -41,6 +53,35 @@ export class DailyView {
         this.renderFilteredTasks(filteredTasks, dailyContainer, component, filename);
 
         return dailyContainer;
+    }
+
+    /**
+     * Parses date from filename (YYYY-MM-DD format)
+     */
+    private parseDateFromFilename(filename: string): DateTime | null {
+        try {
+            // Remove .md extension if present
+            const cleanFilename = filename.replace(/\.md$/, '');
+
+            // Parse YYYY-MM-DD format
+            const parts = cleanFilename.split('-');
+            if (parts.length !== 3) {
+                return null;
+            }
+
+            const year = parseInt(parts[0]);
+            const month = parseInt(parts[1]);
+            const day = parseInt(parts[2]);
+
+            if (isNaN(year) || isNaN(month) || isNaN(day)) {
+                return null;
+            }
+
+            return DateTime.fromObject({ year, month, day });
+        } catch (e) {
+            console.error('Error parsing date from filename:', e);
+            return null;
+        }
     }
 
     /**
@@ -234,8 +275,6 @@ export class DailyView {
             incompleteHeader.textContent = `⏳ Incomplete (${incompleteTasks.length})`;
             incompleteHeader.setAttribute('style', 'margin-top: 1em; margin-bottom: 0.5em;');
 
-            // Convert to proper grouping format - groupByFile = false to remove file headers
-            // const incompleteGrouped = this.dv.array(incompleteTasks).groupBy(t => t.link).array();
             this.dv.taskList(incompleteTasks as any, false, taskContainer, component, filename);
         }
 
@@ -245,9 +284,7 @@ export class DailyView {
             completedHeader.textContent = `✅ Completed (${completedTasks.length})`;
             completedHeader.setAttribute('style', 'margin-top: 1em; margin-bottom: 0.5em;');
 
-            // Convert to proper grouping format - groupByFile = false to remove file headers
-            const completedGrouped = this.dv.array(completedTasks).groupBy(t => t.link).array();
-            this.dv.taskList(completedGrouped as any, false, taskContainer, component, filename);
+            this.dv.taskList(completedTasks as any, false, taskContainer, component, filename);
         }
 
         // Show empty state if no tasks

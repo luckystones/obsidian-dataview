@@ -31,6 +31,51 @@ await dv.dailyTasks({
 
 The `dailyTasks` API automatically renders tasks with the following built-in features:
 
+### **💪 Physical Activity Tracker**
+An integrated widget at the top of your daily view that helps you track 7 physical activities with progressive difficulty.
+
+#### Activities (7 total):
+1. **Pushup** - Upper body
+2. **Crunch** - Core
+3. **Sideplank** - Lateral core
+4. **Plank** - Core endurance
+5. **Bridge** - Lower back
+6. **Squat** - Lower body
+7. **DeadHang** - Grip strength
+
+#### Progressive System:
+- **Starts at Set 5** (5 reps of each activity)
+- **Formula**: Each set lasts for `setNumber × 3` days
+  - Set 5: 15 days (days 1-15)
+  - Set 6: 18 days (days 16-33)
+  - Set 7: 21 days (days 34-54)
+  - Continues automatically
+- **Progress Display**: Shows "Set X - Day Y/Z" at the top
+
+#### Features:
+- **5-Day Chain View**: Shows today plus the last 4 days
+- **Interactive Button**: Click today's button to mark all 7 activities as done
+- **Auto-Progression**: Set number increases automatically
+- **Visual Chains**: Green lines (6px thick) connect consecutive completed days
+- **CSV Storage**: `physical-activity-tracker.csv` (auto-created)
+- **Spacing**: 40px gap between circles for better readability
+
+#### How It Works:
+1. Widget appears at the top of your daily view
+2. Click today's button → All 7 activities marked complete (✅)
+3. Click again → Undo
+4. Previous 4 days shown for reference (not clickable)
+5. Set number calculated automatically based on start date
+6. Lines connect through the center of circles, turning green when both adjacent days are complete
+
+#### CSV Format:
+```csv
+done,date,set,Pushup,Crunch,Sideplank,Plank,Bridge,Squat,DeadHang
+true,2025-01-01,5,✅,✅,✅,✅,✅,✅,✅
+false,2025-01-02,5,,,,,,,
+true,2025-01-16,6,✅,✅,✅,✅,✅,✅,✅
+```
+
 ### **Interactive Filters**
 - Filter tasks by source file
 - "All" button to show all tasks

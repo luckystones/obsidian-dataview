@@ -22,9 +22,19 @@ Successfully implemented the `dailyTasks` API for Obsidian Dataview, similar to 
 
 - **`src/ui/views/daily-view.ts`** - View component for rendering daily tasks
   - `DailyView` class with methods:
-    - `renderDailyTasks()` - Renders tasks with interactive filters
+    - `renderDailyTasks()` - Renders tasks with interactive filters and activity tracker
     - `createTaskFilters()` - Creates filter buttons for source files
     - `renderFilteredTasks()` - Renders tasks separated by completion status
+    - `parseDateFromFilename()` - Parses YYYY-MM-DD date from filename
+
+- **`src/ui/widgets/PhysicalActivityTracker.ts`** - Physical activity tracking widget
+  - `PhysicalActivityTracker` class with methods:
+    - `renderTracker()` - Renders the activity tracker with 5-day chain visualization
+    - `toggleActivityForDate()` - Toggles activity completion for a specific date
+    - `getRecordForDate()` - Retrieves activity record for a specific date
+    - `getLastNDaysRecords()` - Gets records for multiple days
+    - `calculateSetNumber()` - Calculates progressive set number based on days elapsed
+    - CSV-based data storage in `physical-activity-tracker.csv`
 
 ### 2. Type Definition Files
 
@@ -79,6 +89,49 @@ await dv.dailyTasks({
 ```
 
 ## Key Features
+
+### **Physical Activity Tracker** 💪
+The daily view includes an integrated physical activity tracker widget that:
+- **Visualizes activity chains** - Shows 5 days total (last 4 days + today) with connecting lines
+- **Interactive toggle button** - Click to mark all activities as done for the day
+- **CSV-based storage** - Stores data in `physical-activity-tracker.csv`
+- **Set number display** - Shows your activity set number (calculated from week number)
+- **Visual feedback** - Green circles for completed days, gray for incomplete
+- **Chain visualization** - Connects consecutive completed days with green lines
+
+#### Features:
+- **Today's button**: Interactive, clickable, shows current set number
+- **Previous 4 days**: Disabled buttons showing historical data
+- **Toggle functionality**: Click once to complete all activities, click again to undo
+- **Automatic CSV creation**: Creates CSV file on first use
+- **Date tracking**: YYYY-MM-DD format for each entry
+
+#### Activities Tracked (7 total):
+1. **Pushup** - Upper body strength
+2. **Crunch** - Core strength
+3. **Sideplank** - Lateral core stability
+4. **Plank** - Core endurance
+5. **Bridge** - Lower back and glutes
+6. **Squat** - Lower body strength
+7. **DeadHang** - Grip strength and shoulder stability
+
+#### Progressive Set System:
+- **Starting set**: 5 reps
+- **Duration formula**: Each set number × 3 days
+  - Set 5: Days 1-15 (5 × 3 = 15 days)
+  - Set 6: Days 16-33 (6 × 3 = 18 days)
+  - Set 7: Days 34-54 (7 × 3 = 21 days)
+  - And so on...
+- **Automatic progression**: Set number increases automatically after the specified days
+- **Display**: Shows current set and day progress (e.g., "Set 5 - Day 3/15")
+
+#### CSV Structure:
+```csv
+done,date,set,Pushup,Crunch,Sideplank,Plank,Bridge,Squat,DeadHang
+true,2025-01-01,5,✅,✅,✅,✅,✅,✅,✅
+false,2025-01-02,5,,,,,,,
+true,2025-01-16,6,✅,✅,✅,✅,✅,✅,✅
+```
 
 ### **Predefined Filters** 
 Just like `weeklyTasks`, the `dailyTasks` API automatically renders with:
