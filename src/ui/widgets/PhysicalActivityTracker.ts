@@ -223,11 +223,11 @@ export class PhysicalActivityTracker {
         }
         const dayInSet = daysSinceStart - daysPassed + 1;
 
-        setInfo.textContent = `Set ${setNumber} - Day ${dayInSet}/${daysInCurrentSet}`;
+        setInfo.textContent = `${dayInSet}/${daysInCurrentSet}`;
         setInfo.setAttribute('style', `
             padding: 0.4em 0.8em;
-            background: #5899D6;
-            color: white;
+            background: #FFFF00;
+            color: black;
             border-radius: 20px;
             font-size: 0.85em;
             font-weight: 600;
