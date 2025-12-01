@@ -159,6 +159,7 @@ The API can parse and strip the following metadata from task text:
 ✅ Successfully compiled and built
 ✅ No TypeScript errors
 ✅ All linter checks pass
+✅ All tests passing (33 tests for DayUtils)
 
 ## Integration
 
