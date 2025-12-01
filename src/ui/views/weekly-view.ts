@@ -89,23 +89,36 @@ export class WeeklyView {
             align-items: center;
         `);
 
-        // Collect unique filenames from tasks and count tasks
-        const uniqueFiles = new Set<string>();
+        // Helper function to normalize filename (strip _archive suffix and .md extension)
+        const normalizeFilename = (filename: string): string => {
+            return filename.replace(/\.md$/, '').replace(/_archive$/, '');
+        };
+
+        // Collect unique normalized filenames from tasks and count tasks
+        const fileGroups = new Map<string, { count: number, originalFiles: Set<string> }>();
         let allTasksCount = 0;
 
         Object.values(tasks).forEach(dayTasks => {
             dayTasks.forEach((task: STask) => {
                 const baseFilename = task.path.split('/').pop() || 'Unknown';
-                uniqueFiles.add(baseFilename);
+                const normalizedName = normalizeFilename(baseFilename);
+
+                if (!fileGroups.has(normalizedName)) {
+                    fileGroups.set(normalizedName, { count: 0, originalFiles: new Set() });
+                }
+
+                const group = fileGroups.get(normalizedName)!;
+                group.count++;
+                group.originalFiles.add(baseFilename);
                 allTasksCount++;
             });
         });
 
-        // Create a map of filenames to colors from the chart colors
+        // Create a map of normalized filenames to colors from the chart colors
         const fileColorMap: Record<string, string> = {};
         let colorIndex = 0;
-        uniqueFiles.forEach(file => {
-            fileColorMap[file] = this.chartColors[colorIndex % this.chartColors.length];
+        fileGroups.forEach((group, normalizedName) => {
+            fileColorMap[normalizedName] = this.chartColors[colorIndex % this.chartColors.length];
             colorIndex++;
         });
 
@@ -115,31 +128,21 @@ export class WeeklyView {
             onFilterChange(tasks);
         });
 
-        // Create filter buttons for each unique filename
-        uniqueFiles.forEach(baseFilename => {
-            // Count tasks for this file
-            let fileTaskCount = 0;
-            Object.values(tasks).forEach(dayTasks => {
-                dayTasks.forEach((task: STask) => {
-                    if ((task.path.split('/').pop() || 'Unknown') === baseFilename) {
-                        fileTaskCount++;
-                    }
-                });
-            });
-
-            // Create button for this file with its corresponding color
-            this.createFilterButton(filterContainer, baseFilename, fileTaskCount, false, fileColorMap[baseFilename], () => {
-                // Filter tasks by this filename
-                const filteredTasks = this.filterTasksByFilename(tasks, baseFilename);
+        // Create filter buttons for each unique file group
+        fileGroups.forEach((group, normalizedName) => {
+            // Create button for this file group with its corresponding color
+            this.createFilterButton(filterContainer, normalizedName, group.count, false, fileColorMap[normalizedName], () => {
+                // Filter tasks by this normalized filename (includes both regular and archived)
+                const filteredTasks = this.filterTasksByFilename(tasks, normalizedName, normalizeFilename);
                 onFilterChange(filteredTasks);
             });
         });
     }
 
     /**
-     * Filters tasks by filename
+     * Filters tasks by filename (supports normalized names to include archived versions)
      */
-    private filterTasksByFilename(tasks: WeeklyTaskGroup, filename: string): WeeklyTaskGroup {
+    private filterTasksByFilename(tasks: WeeklyTaskGroup, normalizedName: string, normalizeFunc: (filename: string) => string): WeeklyTaskGroup {
         const filteredTasks: WeeklyTaskGroup = {
             Monday: [],
             Tuesday: [],
@@ -153,7 +156,8 @@ export class WeeklyView {
         Object.entries(tasks).forEach(([day, dayTasks]) => {
             filteredTasks[day as DayOfWeek] = dayTasks.filter((task: STask) => {
                 const baseFilename = task.path.split('/').pop() || 'Unknown';
-                return baseFilename === filename;
+                const taskNormalizedName = normalizeFunc(baseFilename);
+                return taskNormalizedName === normalizedName;
             });
         });
 

@@ -16,6 +16,7 @@ import { SListItem } from "data-model/serialized/markdown";
 import { EXPRESSION } from "expression/parse";
 import { Result } from "api/result";
 import { WeeklyTaskApi, WeeklyTaskOptions } from './weekly-task-search';
+import { DailyTaskApi, DailyTaskOptions } from './daily-task-search';
 
 /** Asynchronous API calls related to file / system IO. */
 export class DataviewInlineIOApi {
@@ -83,6 +84,9 @@ export class DataviewInlineApi {
     /** Weekly task functionality */
     public weekly: WeeklyTaskApi;
 
+    /** Daily task functionality */
+    public daily: DailyTaskApi;
+
     /** Dataview functions which can be called from DataviewJS. */
     public func: Record<string, BoundFunctionImpl>;
 
@@ -107,6 +111,7 @@ export class DataviewInlineApi {
         this.func = Functions.bindAll(DEFAULT_FUNCTIONS, this.evaluationContext);
 
         this.weekly = new WeeklyTaskApi(api);
+        this.daily = new DailyTaskApi(api);
     }
 
     /////////////////////////////
@@ -415,6 +420,16 @@ export class DataviewInlineApi {
     /** Get and render weekly tasks in one operation. A convenience wrapper around weekly.getAndRenderWeeklyTasks */
     public async weeklyTasks(options: Omit<WeeklyTaskOptions, "component" | "container">): Promise<HTMLElement> {
         return this.weekly.getAndRenderWeeklyTasks({
+            ...options,
+            component: this.component,
+            container: this.container
+        });
+    }
+
+    /** Get and render daily tasks in one operation. A convenience wrapper around daily.getAndRenderDailyTasks */
+    public async dailyTasks(options?: Omit<DailyTaskOptions, "component" | "container">): Promise<HTMLElement> {
+        console.log('dailyTasks', options);
+        return this.daily.getAndRenderDailyTasks({
             ...options,
             component: this.component,
             container: this.container

@@ -106,6 +106,7 @@ export class WeeklyTaskApi {
 
         const result = this.searchForTasksWithTag(searchPath, filename);
         const tasks = this.processTaskResults(result, filename);
+        console.log('🛑 weeeekly tasks', tasks);
 
         // If trimTaskText is true, update each task's text to show only the description
         if (trimTaskText) {
@@ -321,9 +322,10 @@ export class WeeklyTaskApi {
 
             // Get pages from the given search path
             const basicSearch = this.dv.pages('"game/objectives"');
-
+            console.log('🛑 basicSearch', basicSearch);
             // If no pages found, return an empty task array
             if (!basicSearch || !basicSearch.length) {
+                console.log('no pages found for weekly tasks');
                 return this.dv.array([]) as DataArray<STask>;
             }
 
@@ -345,6 +347,11 @@ export class WeeklyTaskApi {
             // Filter tasks based on date criteria
             const taskSearch = allTasks.where((task: STask): boolean => {
                 try {
+                    // Ignore cancelled tasks (tasks with status "-")
+                    if (task.status === "-") {
+                        return false;
+                    }
+
                     // Get the date range for the specified week
                     const { firstMonday, lastSunday } = WeekUtils.getWeekDateRange(year, week);
 
