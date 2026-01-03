@@ -13,13 +13,13 @@ const INITIAL_SET_NUMBER = 5;
 
 export class PhysicalActivityTracker {
     private app: App;
-    private csvPath: string;
+    private mdPath: string;
     private activityCount: number;
     private startDate: DateTime; // First day of tracking
 
-    constructor(app: App, csvPath: string = 'physical-activity-tracker.csv', startDate?: DateTime) {
+    constructor(app: App, mdPath: string = 'physical-activity-tracker.md', startDate?: DateTime) {
         this.app = app;
-        this.csvPath = csvPath;
+        this.mdPath = mdPath;
         this.activityCount = ACTIVITY_NAMES.length;
         this.startDate = startDate || DateTime.now();
     }
@@ -55,77 +55,96 @@ export class PhysicalActivityTracker {
     }
 
     /**
-     * Ensures the CSV file exists and has the proper header
+     * Ensures the Markdown file exists and has the proper structure
      */
-    private async ensureCSVExists(): Promise<void> {
-        const file = this.app.vault.getAbstractFileByPath(this.csvPath);
+    private async ensureMarkdownExists(): Promise<void> {
+        const file = this.app.vault.getAbstractFileByPath(this.mdPath);
 
         if (!file) {
-            // Create header row with named activity columns
-            const activityColumns = ACTIVITY_NAMES.join(',');
-            const header = `done,date,set,${activityColumns}\n`;
-            await this.app.vault.create(this.csvPath, header);
+            // Create markdown file with table header
+            const activityColumns = ACTIVITY_NAMES.map(name => `| ${name} `).join('');
+            const header = `# Physical Activity Tracker\n\n| Date | Set | Done ${activityColumns}|\n|------|-----|------${ACTIVITY_NAMES.map(() => '|--------').join('')}|\n`;
+            await this.app.vault.create(this.mdPath, header);
         }
     }
 
     /**
-     * Reads the CSV file and returns all records
+     * Reads the Markdown file and returns all records
      */
-    private async readCSV(): Promise<ActivityRecord[]> {
-        await this.ensureCSVExists();
+    private async readMarkdown(): Promise<ActivityRecord[]> {
+        await this.ensureMarkdownExists();
 
-        const file = this.app.vault.getAbstractFileByPath(this.csvPath);
-        if (!file || file.name !== this.csvPath.split('/').pop()) {
+        const file = this.app.vault.getAbstractFileByPath(this.mdPath);
+        if (!file || file.name !== this.mdPath.split('/').pop()) {
             return [];
         }
 
         const content = await this.app.vault.read(file as any);
         const lines = content.split('\n').filter(line => line.trim());
 
-        // Skip header
+        // Find the table and parse data rows
         const records: ActivityRecord[] = [];
-        for (let i = 1; i < lines.length; i++) {
-            const parts = lines[i].split(',');
+        let inTable = false;
+
+        for (const line of lines) {
+            // Skip until we find table separator
+            if (line.includes('|---')) {
+                inTable = true;
+                continue;
+            }
+
+            // Skip non-table lines
+            if (!inTable || !line.startsWith('|')) {
+                continue;
+            }
+
+            const parts = line.split('|').map(p => p.trim()).filter(p => p);
             if (parts.length < 3) continue;
 
-            const done = parts[0].trim().toLowerCase() === 'true';
-            const date = parts[1].trim();
-            const set = parseInt(parts[2].trim()) || 0;
+            const date = parts[0].trim();
+            const set = parseInt(parts[1].trim()) || 0;
+            const done = parts[2].trim().toLowerCase() === 'true' || parts[2].trim() === '✅';
             const activities = parts.slice(3, 3 + this.activityCount).map(a => a.trim() === '✅');
 
-            records.push({ done, date, set, activities });
+            // Only add if we have a valid date
+            if (date && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                records.push({ done, date, set, activities });
+            }
         }
 
         return records;
     }
 
     /**
-     * Writes records back to the CSV file
+     * Writes records back to the Markdown file
      */
-    private async writeCSV(records: ActivityRecord[]): Promise<void> {
-        await this.ensureCSVExists();
+    private async writeMarkdown(records: ActivityRecord[]): Promise<void> {
+        await this.ensureMarkdownExists();
 
-        const file = this.app.vault.getAbstractFileByPath(this.csvPath);
+        const file = this.app.vault.getAbstractFileByPath(this.mdPath);
         if (!file) return;
 
         // Build header with named activities
-        const activityColumns = ACTIVITY_NAMES.join(',');
-        const header = `done,date,set,${activityColumns}\n`;
+        const activityColumns = ACTIVITY_NAMES.map(name => `| ${name} `).join('');
+        let content = `# Physical Activity Tracker\n\n| Date | Set | Done ${activityColumns}|\n|------|-----|------${ACTIVITY_NAMES.map(() => '|--------').join('')}|\n`;
 
-        // Build rows
+        // Build table rows
         const rows = records.map(record => {
-            const activitiesStr = record.activities.map(a => a ? '✅' : '').join(',');
-            return `${record.done},${record.date},${record.set},${activitiesStr}`;
+            const doneSymbol = record.done ? '✅' : '';
+            const activitiesStr = record.activities.map(a => `| ${a ? '✅' : ''} `).join('');
+            return `| ${record.date} | ${record.set} | ${doneSymbol} ${activitiesStr}|`;
         }).join('\n');
 
-        await this.app.vault.modify(file as any, header + rows + '\n');
+        content += rows + '\n';
+
+        await this.app.vault.modify(file as any, content);
     }
 
     /**
      * Gets the record for a specific date
      */
     public async getRecordForDate(date: string): Promise<ActivityRecord | null> {
-        const records = await this.readCSV();
+        const records = await this.readMarkdown();
         return records.find(r => r.date === date) || null;
     }
 
@@ -133,7 +152,7 @@ export class PhysicalActivityTracker {
      * Gets records for the last N days including today
      */
     public async getLastNDaysRecords(n: number, today: DateTime): Promise<Map<string, ActivityRecord>> {
-        const records = await this.readCSV();
+        const records = await this.readMarkdown();
         const recordMap = new Map<string, ActivityRecord>();
 
         for (const record of records) {
@@ -147,7 +166,7 @@ export class PhysicalActivityTracker {
      * Toggles the activity status for a specific date
      */
     public async toggleActivityForDate(date: string, setNumber: number): Promise<boolean> {
-        const records = await this.readCSV();
+        const records = await this.readMarkdown();
         let existingIndex = records.findIndex(r => r.date === date);
 
         if (existingIndex >= 0) {
@@ -178,7 +197,7 @@ export class PhysicalActivityTracker {
             });
         }
 
-        await this.writeCSV(records);
+        await this.writeMarkdown(records);
         return records.find(r => r.date === date)!.done;
     }
 

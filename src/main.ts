@@ -29,6 +29,7 @@ import {
 import { DataviewInit } from "ui/markdown";
 import { inlinePlugin } from "./ui/lp-render";
 import { Extension } from "@codemirror/state";
+import { addWizardCommands } from "./wizard";
 
 export default class DataviewPlugin extends Plugin {
     /** Plugin-wide default settings. */
@@ -137,6 +138,11 @@ export default class DataviewPlugin extends Plugin {
                 }
             },
         });
+
+
+
+        // Add Wizard Commands
+        addWizardCommands(this);
 
         // Run index initialization, which actually traverses the vault to index files.
         if (!this.app.workspace.layoutReady) {
@@ -475,7 +481,7 @@ class GeneralSettingsTab extends PluginSettingTab {
             .setName("Automatic view refreshing")
             .setDesc(
                 "If enabled, views will automatically refresh when files in your vault change; this can negatively affect" +
-                    " some functionality like embeds in views, so turn it off if such functionality is not working."
+                " some functionality like embeds in views, so turn it off if such functionality is not working."
             )
             .addToggle(toggle =>
                 toggle.setValue(this.plugin.settings.refreshEnabled).onChange(async value => {
@@ -503,8 +509,8 @@ class GeneralSettingsTab extends PluginSettingTab {
             .setName("Date format")
             .setDesc(
                 "The default date format (see Luxon date format options)." +
-                    " Currently: " +
-                    DateTime.now().toFormat(this.plugin.settings.defaultDateFormat, { locale: currentLocale() })
+                " Currently: " +
+                DateTime.now().toFormat(this.plugin.settings.defaultDateFormat, { locale: currentLocale() })
             )
             .addText(text =>
                 text
@@ -513,8 +519,8 @@ class GeneralSettingsTab extends PluginSettingTab {
                     .onChange(async value => {
                         dformat.setDesc(
                             "The default date format (see Luxon date format options)." +
-                                " Currently: " +
-                                DateTime.now().toFormat(value, { locale: currentLocale() })
+                            " Currently: " +
+                            DateTime.now().toFormat(value, { locale: currentLocale() })
                         );
                         await this.plugin.updateSettings({ defaultDateFormat: value });
 
@@ -526,8 +532,8 @@ class GeneralSettingsTab extends PluginSettingTab {
             .setName("Date + time format")
             .setDesc(
                 "The default date and time format (see Luxon date format options)." +
-                    " Currently: " +
-                    DateTime.now().toFormat(this.plugin.settings.defaultDateTimeFormat, { locale: currentLocale() })
+                " Currently: " +
+                DateTime.now().toFormat(this.plugin.settings.defaultDateTimeFormat, { locale: currentLocale() })
             )
             .addText(text =>
                 text
@@ -536,8 +542,8 @@ class GeneralSettingsTab extends PluginSettingTab {
                     .onChange(async value => {
                         dtformat.setDesc(
                             "The default date and time format (see Luxon date format options)." +
-                                " Currently: " +
-                                DateTime.now().toFormat(value, { locale: currentLocale() })
+                            " Currently: " +
+                            DateTime.now().toFormat(value, { locale: currentLocale() })
                         );
                         await this.plugin.updateSettings({ defaultDateTimeFormat: value });
 
@@ -566,7 +572,7 @@ class GeneralSettingsTab extends PluginSettingTab {
             .setName("Grouped column name")
             .setDesc(
                 "The name of the default ID column in tables, when the table is on grouped data; this is the auto-generated first column" +
-                    "that links to the source file/group."
+                "that links to the source file/group."
             )
             .addText(text =>
                 text
@@ -678,9 +684,9 @@ class GeneralSettingsTab extends PluginSettingTab {
                         el.createEl("br");
                         el.appendText(
                             descTextLines[2] +
-                                DateTime.now().toFormat(this.plugin.settings.taskCompletionDateFormat, {
-                                    locale: currentLocale(),
-                                })
+                            DateTime.now().toFormat(this.plugin.settings.taskCompletionDateFormat, {
+                                locale: currentLocale(),
+                            })
                         );
                     })
                 )
@@ -697,7 +703,7 @@ class GeneralSettingsTab extends PluginSettingTab {
                                     el.createEl("br");
                                     el.appendText(
                                         descTextLines[2] +
-                                            DateTime.now().toFormat(value.trim(), { locale: currentLocale() })
+                                        DateTime.now().toFormat(value.trim(), { locale: currentLocale() })
                                     );
                                 })
                             );
@@ -718,6 +724,32 @@ class GeneralSettingsTab extends PluginSettingTab {
                 toggle
                     .setValue(this.plugin.settings.recursiveSubTaskCompletion)
                     .onChange(async value => await this.plugin.updateSettings({ recursiveSubTaskCompletion: value }))
+            );
+
+        new Setting(this.containerEl).setName("Wizard Settings").setHeading();
+
+        new Setting(this.containerEl)
+            .setName("OpenAI API Key")
+            .setDesc("API Key for OpenAI")
+            .addText(text =>
+                text
+                    .setPlaceholder("sk-...")
+                    .setValue(this.plugin.settings.openAPIKEY)
+                    .onChange(async value => {
+                        await this.plugin.updateSettings({ openAPIKEY: value });
+                    })
+            );
+
+        new Setting(this.containerEl)
+            .setName("Gemini API Key")
+            .setDesc("API Key for Google Gemini")
+            .addText(text =>
+                text
+                    .setPlaceholder("AIza...")
+                    .setValue(this.plugin.settings.geminiAPIKey)
+                    .onChange(async value => {
+                        await this.plugin.updateSettings({ geminiAPIKey: value });
+                    })
             );
     }
 }

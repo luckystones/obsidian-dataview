@@ -2,6 +2,8 @@
 // Query Settings //
 ////////////////////
 
+import { WizardSettings } from "./wizard";
+
 export interface QuerySettings {
     /** What to render 'null' as in tables. Defaults to '-'. */
     renderNullAs: string;
@@ -71,7 +73,7 @@ export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
 // General Dataview Settings //
 ///////////////////////////////
 
-export interface DataviewSettings extends QuerySettings, ExportSettings {
+export interface DataviewSettings extends QuerySettings, ExportSettings, WizardSettings {
     /** The prefix for inline queries by default. */
     inlineQueryPrefix: string;
     /** The prefix for inline JS queries by default. */
@@ -106,5 +108,7 @@ export const DEFAULT_SETTINGS: DataviewSettings = {
         prettyRenderInlineFields: true,
         prettyRenderInlineFieldsInLivePreview: true,
         dataviewJsKeyword: "dataviewjs",
+        openAPIKEY: "",
+        geminiAPIKey: "",
     },
 };
