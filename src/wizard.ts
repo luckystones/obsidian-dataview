@@ -82,7 +82,7 @@ export const sendToChatGPT = async (settings: WizardSettings, text: string, prom
 
 // Helper function to send text to Gemini
 export const sendToGemini = async (settings: WizardSettings, text: string, prompt: string): Promise<string | null> => {
-    const apiKey = settings.geminiAPIKey || "AIzaSyADJUhzzH78mNvFmLG5x7tA3UEwXTBi_hk";
+    const apiKey = settings.geminiAPIKey;
     if (!apiKey) {
         console.error('Gemini API key is not set');
         return null;
